@@ -114,39 +114,60 @@ def normalize_plan(plan: ScenePlanOutput, words: list[WordTiming], template: Tem
     if fixed[-1].last_word != n_words - 1:
         fixed[-1].last_word = n_words - 1
 
-    # 2) split scenes that are too long (at the word closest to the midpoint, preferring punctuation)
     def dur_of(s: PlannedScene) -> float:
         return words[s.last_word].end - words[s.first_word].start
 
-    out: list[PlannedScene] = []
-    stack = list(fixed)
-    while stack:
-        s = stack.pop(0)
-        if dur_of(s) > smax * 1.15 and s.last_word > s.first_word:
-            mid_t = words[s.first_word].start + dur_of(s) / 2
-            best = min(range(s.first_word, s.last_word), key=lambda i: abs(words[i].end - mid_t) - (0.3 if re.search(r"[.!?,;:]$", words[i].word) else 0))
-            a = PlannedScene(section=s.section, first_word=s.first_word, last_word=best, intent=s.intent, query_tags=s.query_tags, overlay_text=s.overlay_text)
-            b = PlannedScene(section=s.section, first_word=best + 1, last_word=s.last_word, intent=s.intent, query_tags=s.query_tags, overlay_text=None)
-            stack = [a, b] + stack
-        else:
-            out.append(s)
+    def split_long(items: list[PlannedScene]) -> list[PlannedScene]:
+        """Split scenes longer than smax*1.15 at the word nearest the midpoint (prefer punctuation)."""
+        out: list[PlannedScene] = []
+        stack = list(items)
+        while stack:
+            s = stack.pop(0)
+            if dur_of(s) > smax * 1.15 and s.last_word > s.first_word:
+                mid_t = words[s.first_word].start + dur_of(s) / 2
+                best = min(range(s.first_word, s.last_word),
+                           key=lambda i: abs(words[i].end - mid_t) - (0.3 if re.search(r"[.!?,;:]$", words[i].word) else 0))
+                a = PlannedScene(section=s.section, first_word=s.first_word, last_word=best, intent=s.intent, query_tags=s.query_tags, overlay_text=s.overlay_text)
+                b = PlannedScene(section=s.section, first_word=best + 1, last_word=s.last_word, intent=s.intent, query_tags=s.query_tags, overlay_text=None)
+                stack = [a, b] + stack
+            else:
+                out.append(s)
+        return out
 
-    # 3) merge scenes that are too short into a neighbour
-    merged: list[PlannedScene] = []
-    for s in out:
-        if merged and dur_of(s) < smin:
-            prev = merged[-1]
-            prev.last_word = s.last_word
-            prev.overlay_text = prev.overlay_text or s.overlay_text
-            prev.query_tags = list(dict.fromkeys(prev.query_tags + s.query_tags))[:6]
-        else:
-            merged.append(s)
-    if len(merged) > 1 and dur_of(merged[0]) < smin:
-        first, second = merged[0], merged[1]
-        second.first_word = first.first_word
-        second.overlay_text = first.overlay_text or second.overlay_text
-        second.section = first.section
-        merged = merged[1:]
+    def merge_short(items: list[PlannedScene]) -> list[PlannedScene]:
+        """Merge scenes shorter than smin into the neighbour that stays shortest (prev or next)."""
+        items = [PlannedScene(**x.model_dump()) for x in items]
+        changed = True
+        while changed and len(items) > 1:
+            changed = False
+            for idx, s in enumerate(items):
+                if dur_of(s) >= smin:
+                    continue
+                prev = items[idx - 1] if idx > 0 else None
+                nxt = items[idx + 1] if idx + 1 < len(items) else None
+                prev_d = (words[s.last_word].end - words[prev.first_word].start) if prev else float("inf")
+                next_d = (words[nxt.last_word].end - words[s.first_word].start) if nxt else float("inf")
+                if prev is not None and (nxt is None or prev_d <= next_d):
+                    prev.last_word = s.last_word
+                    prev.overlay_text = prev.overlay_text or s.overlay_text
+                    prev.query_tags = list(dict.fromkeys(prev.query_tags + s.query_tags))[:6]
+                else:
+                    nxt.first_word = s.first_word
+                    nxt.overlay_text = s.overlay_text or nxt.overlay_text
+                    nxt.section = s.section if idx == 0 else nxt.section
+                    nxt.query_tags = list(dict.fromkeys(s.query_tags + nxt.query_tags))[:6]
+                del items[idx]
+                changed = True
+                break
+        return items
+
+    # 2)+3) split → merge → split again (merging can create over-long shots), bounded rounds
+    merged = split_long(fixed)
+    for _ in range(3):
+        before = [(x.first_word, x.last_word) for x in merged]
+        merged = split_long(merge_short(merged))
+        if [(x.first_word, x.last_word) for x in merged] == before:
+            break
 
     # 4) to times
     end_total = max(voice_duration + _TAIL_PAD, words[-1].end + 0.05)

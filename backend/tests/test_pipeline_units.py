@@ -169,3 +169,17 @@ def test_target_word_range_respects_persona_speech_rate():
 def test_persona_has_speech_rate_default():
     p = load_persona("young_professional")
     assert 2.0 <= p.speech_rate_wps <= 2.6
+
+
+def test_normalize_plan_short_scene_merge_does_not_create_overlong_scene():
+    # 2.5 wps → each word 0.4 s. scene A = 10 words (4.0 s), B = 3 words (1.2 s, too short), C = 8 words (3.2 s)
+    words = _words(" ".join(f"w{i}" for i in range(21)))
+    tpl = load_template("story_v1")  # shots 1.5–4.0 s
+    plan = ScenePlanOutput(scenes=[
+        PlannedScene(section="setup", first_word=0, last_word=9, intent="a", query_tags=["a"]),
+        PlannedScene(section="development", first_word=10, last_word=12, intent="b", query_tags=["b"]),
+        PlannedScene(section="development", first_word=13, last_word=20, intent="c", query_tags=["c"]),
+    ])
+    scenes = normalize_plan(plan, words, tpl, voice_duration=words[-1].end)
+    for s in scenes:
+        assert tpl.shot_duration.min - 0.01 <= s.duration <= tpl.shot_duration.max * 1.2 + 0.01, [(x.start, x.end) for x in scenes]
