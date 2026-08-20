@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from app.schemas.configs import PersonaConfig, TemplateConfig
-from app.schemas.pipeline import AssetRankOutput, NormalizedScene, ScenePlanOutput, ScriptOutput, WordTiming
+from app.schemas.pipeline import AssetEnrichOutput, AssetRankOutput, NormalizedScene, ScenePlanOutput, ScriptOutput, WordTiming
 
 
 class LLMProvider(Protocol):
@@ -14,7 +14,9 @@ class LLMProvider(Protocol):
 
     def shorten_script(self, *, persona: PersonaConfig, template: TemplateConfig, script: ScriptOutput, target_words: int, reason: str) -> ScriptOutput: ...
 
-    def plan_scenes(self, *, persona: PersonaConfig, template: TemplateConfig, topic: str, script: ScriptOutput, words: list[WordTiming], voice_duration: float) -> ScenePlanOutput: ...
+    def plan_scenes(self, *, persona: PersonaConfig, template: TemplateConfig, topic: str, script: ScriptOutput, words: list[WordTiming], voice_duration: float, library: str | None = None) -> ScenePlanOutput: ...
+
+    def enrich_assets(self, *, assets: list[dict]) -> AssetEnrichOutput: ...
 
     def rank_assets(self, *, topic: str, scenes: list[NormalizedScene], candidates: dict[int, list[dict]]) -> AssetRankOutput: ...
 

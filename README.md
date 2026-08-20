@@ -29,7 +29,7 @@ Dry run without any API keys: set `LLM_PROVIDER=fake` and `VOICE_PROVIDER=fake` 
 |---|---|
 | `generate --template story_v1 --topic "..." [--duration 18] [--plan-only]` | full pipeline (PRD §46) |
 | `templates` · `doctor` | list templates · environment check |
-| `assets import [--approve-unseeded]` · `assets list` · `assets search typing desk close` · `assets set asset_001 --quality 0.9 --tags a,b` | asset library |
+| `assets import [--approve-unseeded]` · `assets enrich [--overwrite]` · `assets list` · `assets search typing desk close` · `assets set asset_001 --quality 0.9 --tags a,b` | asset library (`enrich` = LLM-assisted tags/action/location/mood from descriptions) |
 | `projects create/list/show/generate` | project CRUD |
 | `projects regenerate-script ID` · `projects change-assets ID` · `projects render ID` · `projects approve ID` · `projects retry ID` | regeneration controls (PRD §24) |
 | `projects suggest ID SCENE` · `projects set-asset ID SCENE ASSET_ID` | manual B-roll override (PRD §49) |
@@ -59,10 +59,13 @@ Per project `storage/projects/<id>/` keeps every artifact version: `script_vN.js
 
 ## How selection & rendering work
 * **Assets**: `assets import` reads technical metadata with ffprobe and semantic metadata from `assets/broll_database.json` (description/tags/shot) + cheap inference (action from filename, location/mood from text). Seeded clips are `approved=true`; new unseeded files are unapproved until you `assets set ... --approved true`.
-* **Selection** (PRD §9/§31/§32): scene → query tags (+synonyms) → candidates from DB with `relevance × quality × freshness` (freshness 1.0 / 0.9 / 0.7 / 0.45 / 0.2 by last use) → top 12 per scene → LLM ranks → validated unique pick → random segment inside `usable_start..usable_end` (seeded; *Render Again* changes the seed).
+* **Selection** (PRD §9/§31/§32): scene → query tags (+synonyms) → candidates from DB with `relevance × quality × freshness` (freshness 1.0 / 0.9 / 0.7 / 0.45 / 0.2 by last use) → for libraries ≤60 clips the **whole catalog** goes to the LLM ranker (top-15 otherwise) → validated unique pick → random segment inside `usable_start..usable_end` (seeded; *Render Again* changes the seed). The scene planner also receives a **library summary** so it only plans visuals the footage can cover.
 * **Scene planning** (PRD §17/§30): the LLM returns word-index ranges + visual intent + tags + optional overlay; the backend snaps them to the **real word timestamps**, merges <1.5 s shots, splits >4 s shots, caps overlays to 1–3 and makes scenes contiguous up to voice end + 0.35 s. Heuristic planner is the fallback.
 * **Render** (PRD §18/§19): stage 1 per scene — trim, cover-scale, jittered crop, subtle 2.5–5 % zoom in/out, 30 fps; stage 2 — concat, burn ASS captions (2–5 word chunks, emphasised word, pop animation, TikTok safe zones) + overlays, voice `loudnorm`, optional music at −20 dB with sidechain ducking, H.264/AAC, `+faststart`. Then QC (PRD §41): 1080×1920, 30 fps, h264/aac, 10–30 s, size.
 * **Duration control** (PRD §39): word budget ≈ 2.5 words/s; if the synthesized voice exceeds the template/persona max, the script is shortened and re-voiced (max 2 rewrites).
+
+## Growing the B-roll library
+The planner can only show what you filmed. Current coverage: desk, phone, walking, reaction, product. Scenes that come up often in this persona's scripts and have **no footage yet**: laptop video call / meeting, notebook + handwriting, scrolling a long document on the laptop, recording a voice memo, calendar/to-do app on phone, AI app on laptop, walking into an office, coworker conversation. Drop new clips in a category folder, run `assets import` (+ `assets enrich`), then `assets set <id> --approved true`.
 
 ## Music
 Drop royalty-free `<category>_NN.mp3` files into `storage/music/` (`upbeat_01.mp3`, `productivity_soft_01.mp3`, `minimal_01.mp3`…). Templates choose a category; empty folder = voice-only.

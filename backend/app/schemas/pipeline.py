@@ -144,3 +144,18 @@ class VideoJSON(BaseModel):
     @property
     def total_duration(self) -> float:
         return self.scenes[-1].end
+
+
+# ---------- asset enrichment (AI-assisted semantic metadata, PRD §8) ----------
+
+class AssetEnrichment(BaseModel):
+    asset_id: str
+    tags: list[str] = Field(description="6-12 lowercase single-word search tags describing what is visible / the action")
+    action: str | None = Field(default=None, description="snake_case main action, e.g. typing_laptop, scrolling_phone")
+    location: str | None = Field(default=None, description="cafe | office | street | home | store | other")
+    mood: str | None = Field(default=None, description="neutral | focused | stressed | relaxed | happy")
+    shot: str | None = Field(default=None, description="close | medium | wide")
+
+
+class AssetEnrichOutput(BaseModel):
+    assets: list[AssetEnrichment]

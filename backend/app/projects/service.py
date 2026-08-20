@@ -12,6 +12,7 @@ from typing import Callable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.assets.catalog import library_summary
 from app.assets.selector import extract_query_tags, find_candidates
 from app.config.loaders import list_templates, load_caption_style, load_persona, load_template
 from app.config.settings import get_settings
@@ -210,7 +211,8 @@ class ProjectService:
                 scenes = self._scenes_from_plan(p.id, p.plan_version, self.load_plan(p.id, p.plan_version), words)
             if scenes is None:
                 try:
-                    raw = self.llm.plan_scenes(persona=persona, template=template, topic=p.topic, script=script, words=words, voice_duration=vg.duration)
+                    raw = self.llm.plan_scenes(persona=persona, template=template, topic=p.topic, script=script, words=words,
+                                               voice_duration=vg.duration, library=library_summary(self.session))
                 except Exception as exc:  # noqa: BLE001 — heuristic fallback keeps the pipeline alive
                     log.warning("LLM scene planning failed (%s); using heuristic planner", exc)
                     self.session.add(ProjectEvent(project_id=p.id, stage="PLANNING", level="warning", message=f"LLM plan failed, heuristic used: {exc}"))

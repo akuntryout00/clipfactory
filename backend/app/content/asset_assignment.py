@@ -5,6 +5,9 @@ import random
 
 from sqlalchemy.orm import Session
 
+from sqlalchemy import func, select
+
+from app.assets.catalog import candidate_limit_for
 from app.assets.selector import Candidate, choose_segment, extract_query_tags, find_candidates
 from app.captions.generator import build_caption_chunks
 from app.llm.base import LLMProvider
@@ -21,14 +24,18 @@ def select_assets_for_scenes(
 ) -> dict[int, Asset]:
     """Backend filtering → LLM ranking → validated, unique asset per scene (fallback: best score)."""
     exclude = set(exclude_asset_ids or ())
+    n_approved = session.execute(select(func.count()).select_from(Asset).where(Asset.approved.is_(True))).scalar_one()
+    limit = candidate_limit_for(n_approved)
+    small = limit >= n_approved  # whole catalog goes to the LLM (PRD §9 small-library mode)
     candidates: dict[int, list[Candidate]] = {}
     for sc in scenes:
         tags = extract_query_tags(sc.query_tags + [sc.intent])
-        cands = find_candidates(session, tags, limit=CANDIDATES_PER_SCENE, exclude_ids=exclude, min_duration=sc.duration)
+        cands = find_candidates(session, tags, limit=limit, exclude_ids=exclude, min_duration=sc.duration,
+                                min_relevance=-1.0 if small else 0.0)
         if not cands:  # relax: any approved asset long enough, then any at all
-            cands = find_candidates(session, tags, limit=CANDIDATES_PER_SCENE, exclude_ids=exclude, min_relevance=-1.0)
+            cands = find_candidates(session, tags, limit=limit, exclude_ids=exclude, min_relevance=-1.0)
         if not cands:
-            cands = find_candidates(session, tags, limit=CANDIDATES_PER_SCENE, min_relevance=-1.0)
+            cands = find_candidates(session, tags, limit=limit, min_relevance=-1.0)
         if not cands:
             raise RuntimeError("no approved assets available — import and approve assets first")
         candidates[sc.order] = cands

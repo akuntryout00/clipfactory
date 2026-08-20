@@ -151,6 +151,19 @@ def assets_import(approve_unseeded: bool = typer.Option(False, help="approve new
         typer.echo(f"  ! {e}")
 
 
+@assets_app.command("enrich")
+def assets_enrich(overwrite: bool = typer.Option(False, help="overwrite existing action/location/shot/mood"),
+                  only_unapproved: bool = typer.Option(False)):
+    """AI-assisted semantic metadata: richer tags/action/location/mood from clip descriptions (PRD §8)."""
+    from app.assets.enrich import enrich_library
+    from app.llm.base import get_llm
+
+    llm = SERVICE_KWARGS.get("llm") or get_llm()
+    with _factory()() as s:
+        n = enrich_library(s, llm, overwrite=overwrite, only_unapproved=only_unapproved)
+    typer.echo(f"enriched {n} assets")
+
+
 @assets_app.command("list")
 def assets_list(approved_only: bool = typer.Option(False)):
     from sqlalchemy import select

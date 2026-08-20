@@ -69,18 +69,21 @@ PLAN_SYSTEM = (
 
 
 def plan_user_prompt(persona: PersonaConfig, template: TemplateConfig, topic: str, script: ScriptOutput,
-                     words: list[WordTiming], voice_duration: float, section_ranges: dict[str, tuple[int, int]]) -> str:
+                     words: list[WordTiming], voice_duration: float, section_ranges: dict[str, tuple[int, int]],
+                     library: str | None = None) -> str:
     listing = "\n".join(f"{i}: {w.word} [{w.start:.2f}-{w.end:.2f}]" for i, w in enumerate(words))
     secs = "\n".join(f"  - {k}: words {a}-{b}" for k, (a, b) in section_ranges.items())
+    lib = f"\nAVAILABLE B-ROLL (plan only what this library can show; reference asset_ids in `intent` when one fits):\n{library}\n" if library else ""
     return (
-        f"{template_block(template)}\nTOPIC: {topic}\nVOICE DURATION: {voice_duration:.2f} s\n"
+        f"{template_block(template)}\nTOPIC: {topic}\nVOICE DURATION: {voice_duration:.2f} s\n{lib}"
         f"SHOT LENGTH: {template.shot_duration.min}-{template.shot_duration.max} s; overlays allowed: {int(template.overlays.min)}-{int(template.overlays.max)}\n"
         f"SECTION → WORD RANGES:\n{secs}\n\nWORDS:\n{listing}\n\nPlan the scenes."
     )
 
 
 RANK_SYSTEM = (
-    "You pick the best real B-roll clip for each scene of a narrated TikTok from a shortlist. Rules:\n"
+    "You pick the best real B-roll clip for each scene of a narrated TikTok from a shortlist (for small libraries the shortlist is "
+    "the whole library). Judge by the clip DESCRIPTION against the scene intent — the numeric score is only a weak prior. Rules:\n"
     "- Choose exactly one asset_id per scene, only from that scene's candidates.\n"
     "- Never use the same asset_id for two scenes.\n"
     "- Prefer visual match to the scene intent, then variety between consecutive scenes (alternate locations/shot sizes), "
@@ -98,3 +101,18 @@ def rank_user_prompt(topic: str, scenes: list[NormalizedScene], candidates: dict
             f"shot={c.get('shot')} dur={c.get('duration')} score={c.get('score')}" for c in cands)
         blocks.append(f"SCENE {sc.order} [{sc.start:.1f}-{sc.end:.1f}s] ({sc.section}) intent: {sc.intent}\n  candidates:\n{c_lines}")
     return f"TOPIC: {topic}\n\n" + "\n\n".join(blocks) + "\n\nChoose one asset per scene."
+
+
+ENRICH_SYSTEM = (
+    "You are tagging a B-roll library for a short-form video factory. For each clip you get a human-written description and any "
+    "existing tags. Produce rich, literal, lowercase single-word search tags (6-12) covering: objects visible, the action, the "
+    "place, the framing, the feeling, and what concepts the clip could illustrate in a productivity/career/AI video (e.g. "
+    "'distraction', 'focus', 'overwhelm', 'commute', 'planning'). Also give action (snake_case), location, mood and shot. "
+    "Never invent things not implied by the description. Output JSON only."
+)
+
+
+def enrich_user_prompt(assets: list[dict]) -> str:
+    lines = [f"- {a['asset_id']} ({a['file']}): {a.get('description') or ''} | existing tags: {', '.join(a.get('tags') or [])} | "
+             f"action={a.get('action')} location={a.get('location')} shot={a.get('shot')}" for a in assets]
+    return "CLIPS:\n" + "\n".join(lines) + "\n\nReturn one entry per asset_id."

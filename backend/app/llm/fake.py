@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from app.schemas.configs import PersonaConfig, TemplateConfig
 from app.schemas.pipeline import (
-    AssetRankOutput, NormalizedScene, SceneAssetChoice, ScenePlanOutput, ScriptOutput, ScriptSection, WordTiming,
+    AssetEnrichment, AssetEnrichOutput, AssetRankOutput, NormalizedScene, SceneAssetChoice, ScenePlanOutput, ScriptOutput, ScriptSection, WordTiming,
 )
 
 _FILLER = (
@@ -50,7 +50,7 @@ class FakeLLM:
             remaining -= n
         return ScriptOutput(hook=sections[0].text, sections=sections)
 
-    def plan_scenes(self, *, persona: PersonaConfig, template: TemplateConfig, topic: str, script: ScriptOutput, words: list[WordTiming], voice_duration: float) -> ScenePlanOutput:
+    def plan_scenes(self, *, persona: PersonaConfig, template: TemplateConfig, topic: str, script: ScriptOutput, words: list[WordTiming], voice_duration: float, library: str | None = None) -> ScenePlanOutput:
         from app.content.scene_planner import heuristic_plan
 
         return heuristic_plan(script, words, template)
@@ -65,3 +65,8 @@ class FakeLLM:
                     choices.append(SceneAssetChoice(scene_order=sc.order, asset_id=c["asset_id"], reason="top candidate"))
                     break
         return AssetRankOutput(choices=choices)
+
+    def enrich_assets(self, *, assets: list[dict]) -> AssetEnrichOutput:
+        return AssetEnrichOutput(assets=[AssetEnrichment(asset_id=a["asset_id"], tags=list(a.get("tags") or []) + ["broll"],
+                                                         action=a.get("action"), location=a.get("location"), mood=None,
+                                                         shot=a.get("shot")) for a in assets])
