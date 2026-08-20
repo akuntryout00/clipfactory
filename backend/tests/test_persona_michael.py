@@ -33,3 +33,12 @@ def test_generic_persona_still_works_without_identity():
     p = load_persona("young_professional")
     txt = prompts.persona_block(p)
     assert "PERSONA" in txt
+
+
+def test_template_closing_overrides_persona_closing_in_script_prompt():
+    p = load_persona("michael")
+    for tid, needle in (("story_v1", "punchline"), ("list_v1", "question"), ("pov_v1", "sarcastic"), ("problem_solution_v1", "invite")):
+        t = load_template(tid)
+        assert t.closing, tid
+        txt = prompts.script_user_prompt(p, t, "topic", 18, 40, 50)
+        assert "CLOSING" in txt and needle in txt.lower(), (tid, txt[-400:])

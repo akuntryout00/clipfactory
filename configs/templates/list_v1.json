@@ -2,17 +2,48 @@
   "id": "list_v1",
   "name": "List",
   "description": "Listicle, e.g. '3 things I stopped doing to save time'. Big text overlays per item.",
-  "duration": {"min": 15, "target": 18, "max": 24},
+  "duration": {
+    "min": 15,
+    "target": 18,
+    "max": 24
+  },
   "sections": [
-    {"type": "hook", "weight": 0.14, "guidance": "State the list promise ('3 things...')."},
-    {"type": "item_1", "weight": 0.26, "guidance": "Item one: name it, one-line why."},
-    {"type": "item_2", "weight": 0.26, "guidance": "Item two: name it, one-line why."},
-    {"type": "item_3", "weight": 0.26, "guidance": "Item three: name it, one-line why."},
-    {"type": "ending", "weight": 0.08, "guidance": "One-line close."}
+    {
+      "type": "hook",
+      "weight": 0.14,
+      "guidance": "State the list promise ('3 things...')."
+    },
+    {
+      "type": "item_1",
+      "weight": 0.26,
+      "guidance": "Item one: name it, one-line why."
+    },
+    {
+      "type": "item_2",
+      "weight": 0.26,
+      "guidance": "Item two: name it, one-line why."
+    },
+    {
+      "type": "item_3",
+      "weight": 0.26,
+      "guidance": "Item three: name it, one-line why."
+    },
+    {
+      "type": "ending",
+      "weight": 0.08,
+      "guidance": "One-line close."
+    }
   ],
   "voiceover": true,
   "caption_style": "dynamic_center",
   "music_category": "upbeat",
-  "shot_duration": {"min": 1.5, "max": 4.5},
-  "overlays": {"min": 3, "max": 4}
+  "shot_duration": {
+    "min": 1.5,
+    "max": 4.5
+  },
+  "overlays": {
+    "min": 3,
+    "max": 4
+  },
+  "closing": "Close with a one-line wrap-up and then one short question to the viewer, e.g. 'Which one are you skipping?'. No 'follow/like'."
 }

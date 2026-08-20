@@ -93,6 +93,7 @@ class TemplateConfig(BaseModel):
     voiceover: bool = True
     caption_style: str = "dynamic_center"
     music_category: str | None = None
+    closing: str | None = None  # how this template ends; overrides persona.closing_style
     shot_duration: RangeSpec = RangeSpec(min=1.5, max=4.0)
     overlays: RangeSpec = RangeSpec(min=1, max=3)
 

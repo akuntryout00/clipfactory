@@ -2,17 +2,48 @@
   "id": "story_v1",
   "name": "Story",
   "description": "Narrative / educational content. Voice-over dominant.",
-  "duration": {"min": 15, "target": 18, "max": 22},
+  "duration": {
+    "min": 15,
+    "target": 18,
+    "max": 22
+  },
   "sections": [
-    {"type": "hook", "weight": 0.12, "guidance": "Pattern-interrupt first line, max 1-2 seconds."},
-    {"type": "setup", "weight": 0.25, "guidance": "Describe the situation / common behavior."},
-    {"type": "development", "weight": 0.33, "guidance": "Show why it's a problem or what changes."},
-    {"type": "payoff", "weight": 0.20, "guidance": "The insight / the better way."},
-    {"type": "ending", "weight": 0.10, "guidance": "Short punchy close. No CTA spam."}
+    {
+      "type": "hook",
+      "weight": 0.12,
+      "guidance": "Pattern-interrupt first line, max 1-2 seconds."
+    },
+    {
+      "type": "setup",
+      "weight": 0.25,
+      "guidance": "Describe the situation / common behavior."
+    },
+    {
+      "type": "development",
+      "weight": 0.33,
+      "guidance": "Show why it's a problem or what changes."
+    },
+    {
+      "type": "payoff",
+      "weight": 0.2,
+      "guidance": "The insight / the better way."
+    },
+    {
+      "type": "ending",
+      "weight": 0.1,
+      "guidance": "Short punchy close. No CTA spam."
+    }
   ],
   "voiceover": true,
   "caption_style": "dynamic_center",
   "music_category": "productivity_soft",
-  "shot_duration": {"min": 1.5, "max": 4.0},
-  "overlays": {"min": 1, "max": 3}
+  "shot_duration": {
+    "min": 1.5,
+    "max": 4.0
+  },
+  "overlays": {
+    "min": 1,
+    "max": 3
+  },
+  "closing": "End on one reflective punchline that seals the lesson (one short sentence). No call to action."
 }

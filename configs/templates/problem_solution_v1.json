@@ -2,17 +2,48 @@
   "id": "problem_solution_v1",
   "name": "Problem / Solution",
   "description": "Product-friendly structure: problem -> transition -> solution -> result.",
-  "duration": {"min": 15, "target": 19, "max": 25},
+  "duration": {
+    "min": 15,
+    "target": 19,
+    "max": 25
+  },
   "sections": [
-    {"type": "hook", "weight": 0.12, "guidance": "Call out the problem bluntly."},
-    {"type": "problem", "weight": 0.25, "guidance": "Why it's painful / costly."},
-    {"type": "transition", "weight": 0.13, "guidance": "'Here's the thing...' pivot."},
-    {"type": "solution", "weight": 0.30, "guidance": "The approach or tool (no hard sell)."},
-    {"type": "result", "weight": 0.20, "guidance": "Concrete outcome."}
+    {
+      "type": "hook",
+      "weight": 0.12,
+      "guidance": "Call out the problem bluntly."
+    },
+    {
+      "type": "problem",
+      "weight": 0.25,
+      "guidance": "Why it's painful / costly."
+    },
+    {
+      "type": "transition",
+      "weight": 0.13,
+      "guidance": "'Here's the thing...' pivot."
+    },
+    {
+      "type": "solution",
+      "weight": 0.3,
+      "guidance": "The approach or tool (no hard sell)."
+    },
+    {
+      "type": "result",
+      "weight": 0.2,
+      "guidance": "Concrete outcome."
+    }
   ],
   "voiceover": true,
   "caption_style": "dynamic_center",
   "music_category": "upbeat",
-  "shot_duration": {"min": 1.5, "max": 5.0},
-  "overlays": {"min": 1, "max": 3}
+  "shot_duration": {
+    "min": 1.5,
+    "max": 5.0
+  },
+  "overlays": {
+    "min": 1,
+    "max": 3
+  },
+  "closing": "Close with the concrete result in one sentence, then a soft invite to try it ('try it tomorrow and see'). Never 'follow/like/subscribe'."
 }

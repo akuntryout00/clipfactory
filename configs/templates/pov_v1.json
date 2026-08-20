@@ -2,16 +2,43 @@
   "id": "pov_v1",
   "name": "POV",
   "description": "POV format, e.g. 'POV: you spent 30 minutes doing something AI does in 10 seconds'.",
-  "duration": {"min": 15, "target": 17, "max": 22},
+  "duration": {
+    "min": 15,
+    "target": 17,
+    "max": 22
+  },
   "sections": [
-    {"type": "hook", "weight": 0.15, "guidance": "Starts with 'POV:' framing."},
-    {"type": "problem", "weight": 0.30, "guidance": "The relatable pain in second person."},
-    {"type": "realization", "weight": 0.30, "guidance": "The moment it clicks."},
-    {"type": "result", "weight": 0.25, "guidance": "What life looks like after."}
+    {
+      "type": "hook",
+      "weight": 0.15,
+      "guidance": "Starts with 'POV:' framing."
+    },
+    {
+      "type": "problem",
+      "weight": 0.3,
+      "guidance": "The relatable pain in second person."
+    },
+    {
+      "type": "realization",
+      "weight": 0.3,
+      "guidance": "The moment it clicks."
+    },
+    {
+      "type": "result",
+      "weight": 0.25,
+      "guidance": "What life looks like after."
+    }
   ],
   "voiceover": true,
   "caption_style": "dynamic_center",
   "music_category": "minimal",
-  "shot_duration": {"min": 1.5, "max": 4.0},
-  "overlays": {"min": 1, "max": 3}
+  "shot_duration": {
+    "min": 1.5,
+    "max": 4.0
+  },
+  "overlays": {
+    "min": 1,
+    "max": 3
+  },
+  "closing": "Close with a self-aware, lightly sarcastic final beat that lands the irony (one short sentence). No call to action."
 }

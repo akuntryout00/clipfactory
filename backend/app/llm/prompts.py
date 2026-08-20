@@ -49,7 +49,7 @@ def persona_block(p: PersonaConfig) -> str:
         lines.append(f"Own products: {prods}. {_PRODUCT_POLICY[p.product_mention_policy]}")
     else:
         lines.append(_PRODUCT_POLICY["never"])
-    lines.append("Closing: " + _CLOSING.get(p.closing_style, _CLOSING["punchline_no_cta"]))
+    lines.append("Default closing (used only if the template does not define its own): " + _CLOSING.get(p.closing_style, _CLOSING["punchline_no_cta"]))
     return "\n".join(lines) + "\n"
 
 
@@ -75,6 +75,7 @@ def script_user_prompt(persona: PersonaConfig, template: TemplateConfig, topic: 
         f"{persona_block(persona)}\n{template_block(template)}\n"
         f"TOPIC: {topic}\n"
         f"TARGET DURATION: {target_duration:.0f} seconds → write {lo}-{hi} words in total across all sections.\n"
+        f"CLOSING (this template): {template.closing or _CLOSING.get(persona.closing_style, _CLOSING['punchline_no_cta'])}\n"
         "Write the script now."
     )
 
