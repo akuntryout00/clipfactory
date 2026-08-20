@@ -1,0 +1,100 @@
+"""Prompt builders — kept separate so they can be tuned without touching provider code."""
+from __future__ import annotations
+
+import json
+
+from app.schemas.configs import PersonaConfig, TemplateConfig
+from app.schemas.pipeline import NormalizedScene, ScriptOutput, WordTiming
+
+
+def persona_block(p: PersonaConfig) -> str:
+    return (
+        f"PERSONA: {p.name}\n"
+        f"Audience: {p.audience}\nLanguage: {p.language}\n"
+        f"Tone: {', '.join(p.tone)}\n"
+        f"Topics they cover: {', '.join(p.topics)}\n"
+        f"Never: {', '.join(p.avoid)}\n"
+    )
+
+
+def template_block(t: TemplateConfig) -> str:
+    secs = "\n".join(f"  - {s.type} (~{int(s.weight * 100)}% of runtime): {s.guidance}" for s in t.sections)
+    return f"TEMPLATE: {t.name} ({t.id}) — {t.description}\nSections, in order:\n{secs}\n"
+
+
+SCRIPT_SYSTEM = (
+    "You write spoken-word scripts for short vertical TikTok videos that are narrated over real B-roll footage. "
+    "You never produce video; you produce a script. Rules:\n"
+    "- The first section is the HOOK: a pattern interrupt delivered in the first 1-2 seconds. No 'hey guys', no intro.\n"
+    "- Conversational, spoken English. Short sentences. Contractions are fine.\n"
+    "- Every section text must be plain spoken prose (no emojis, no hashtags, no stage directions, no markdown).\n"
+    "- Do NOT invent personal anecdotes or statistics you cannot verify. No hard selling, no corporate speak, max one soft CTA.\n"
+    "- Respect the word budget precisely: that is what controls the video length.\n"
+    "- Return exactly one text entry per template section, in template order, using the section type names given."
+)
+
+
+def script_user_prompt(persona: PersonaConfig, template: TemplateConfig, topic: str, target_duration: float, lo: int, hi: int) -> str:
+    return (
+        f"{persona_block(persona)}\n{template_block(template)}\n"
+        f"TOPIC: {topic}\n"
+        f"TARGET DURATION: {target_duration:.0f} seconds → write {lo}-{hi} words in total across all sections.\n"
+        "Write the script now."
+    )
+
+
+def shorten_user_prompt(persona: PersonaConfig, template: TemplateConfig, script: ScriptOutput, target_words: int, reason: str) -> str:
+    return (
+        f"{persona_block(persona)}\n{template_block(template)}\n"
+        f"The following script is too long ({reason}). Rewrite it to at most {target_words} words total while keeping the same "
+        "hook idea, the same section structure and the same meaning. Cut filler first, then merge sentences.\n\n"
+        f"CURRENT SCRIPT (json):\n{json.dumps(script.model_dump(), ensure_ascii=False)}"
+    )
+
+
+PLAN_SYSTEM = (
+    "You are a short-form video editor planning B-roll shots for a narrated TikTok. You receive the spoken words with their "
+    "indices and timestamps (seconds). Cut the video into scenes by choosing inclusive word-index ranges. Rules:\n"
+    "- Scene boundaries must fall on sentence or clause changes, or when the visual concept changes — never arbitrary.\n"
+    "- Scenes must cover every word exactly once, in order, with no gaps (first_word of scene n+1 = last_word of scene n + 1).\n"
+    "- Aim for shots of 1.5-4 seconds (use the timestamps), total 4-8 scenes. The hook is its own short scene.\n"
+    "- For each scene give `intent`: what the viewer should SEE (concrete, filmable with everyday B-roll: laptop, phone, walking, "
+    "coffee, desk, reactions). Not the words. And `query_tags`: 3-6 lowercase search tags from this vocabulary where possible: "
+    "typing, laptop, desk, phone, scrolling, walking, street, cafe, coffee, stressed, frustrated, airpods, call, screen, ai, "
+    "notebook, product, reaction, close, wide.\n"
+    "- `overlay_text`: a big on-screen creative text (max 4 words, punchy, may be ALL CAPS) for only 1-3 scenes per video — "
+    "the hook and the key payoff/items. null for the rest. For list templates, each item scene gets an overlay like '1. NAME'.\n"
+    "Output JSON only."
+)
+
+
+def plan_user_prompt(persona: PersonaConfig, template: TemplateConfig, topic: str, script: ScriptOutput,
+                     words: list[WordTiming], voice_duration: float, section_ranges: dict[str, tuple[int, int]]) -> str:
+    listing = "\n".join(f"{i}: {w.word} [{w.start:.2f}-{w.end:.2f}]" for i, w in enumerate(words))
+    secs = "\n".join(f"  - {k}: words {a}-{b}" for k, (a, b) in section_ranges.items())
+    return (
+        f"{template_block(template)}\nTOPIC: {topic}\nVOICE DURATION: {voice_duration:.2f} s\n"
+        f"SHOT LENGTH: {template.shot_duration.min}-{template.shot_duration.max} s; overlays allowed: {int(template.overlays.min)}-{int(template.overlays.max)}\n"
+        f"SECTION → WORD RANGES:\n{secs}\n\nWORDS:\n{listing}\n\nPlan the scenes."
+    )
+
+
+RANK_SYSTEM = (
+    "You pick the best real B-roll clip for each scene of a narrated TikTok from a shortlist. Rules:\n"
+    "- Choose exactly one asset_id per scene, only from that scene's candidates.\n"
+    "- Never use the same asset_id for two scenes.\n"
+    "- Prefer visual match to the scene intent, then variety between consecutive scenes (alternate locations/shot sizes), "
+    "then the provided score. Avoid two consecutive scenes with the same action.\n"
+    "Output JSON only."
+)
+
+
+def rank_user_prompt(topic: str, scenes: list[NormalizedScene], candidates: dict[int, list[dict]]) -> str:
+    blocks = []
+    for sc in scenes:
+        cands = candidates.get(sc.order, [])
+        c_lines = "\n".join(
+            f"    - {c['asset_id']}: {c.get('description') or ''} | action={c.get('action')} location={c.get('location')} "
+            f"shot={c.get('shot')} dur={c.get('duration')} score={c.get('score')}" for c in cands)
+        blocks.append(f"SCENE {sc.order} [{sc.start:.1f}-{sc.end:.1f}s] ({sc.section}) intent: {sc.intent}\n  candidates:\n{c_lines}")
+    return f"TOPIC: {topic}\n\n" + "\n\n".join(blocks) + "\n\nChoose one asset per scene."

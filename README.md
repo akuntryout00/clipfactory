@@ -1,0 +1,71 @@
+# TikTok Content Factory — MVP
+
+> Give it a **topic** and a **template**; get a TikTok-ready 1080×1920 video made from **your own B-roll**, an **AI script**, **ElevenLabs voice** and **dynamic captions**.
+
+Principle (PRD §3): **the LLM never produces video — it produces a validated `Video JSON` plan; FFmpeg renders it deterministically.**
+The real ElevenLabs audio duration is the master clock for every scene.
+
+```
+Topic + Template → Script → ElevenLabs voice (+alignment) → Scene plan → B-roll selection → Video JSON → Captions → FFmpeg → MP4
+```
+
+## Stack
+Python 3.12 · FastAPI · SQLAlchemy/PostgreSQL · FFmpeg (libass captions) · OpenAI (structured outputs) · ElevenLabs (timestamps) · Docker Compose.
+No frontend in the MVP — CLI (`ttcf`) + REST API (`/docs`).
+
+## Quick start
+```bash
+cp .env.example .env           # fill OPENAI_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
+make build && make up          # db + api  → http://localhost:8000/docs
+make import                    # scan ./assets → metadata (ffprobe + assets/broll_database.json)
+make doctor                    # keys / ffmpeg / dirs check
+make generate TEMPLATE=list_v1 TOPIC="3 productivity habits that waste your time"
+# ✓ /app/storage/projects/proj_xxx/final.mp4   (→ ./storage/projects/proj_xxx/final.mp4 on the host)
+```
+Dry run without any API keys: set `LLM_PROVIDER=fake` and `VOICE_PROVIDER=fake` in `.env` (deterministic offline providers, beep voice).
+
+## CLI (`docker compose run --rm api ttcf ...`)
+| command | what |
+|---|---|
+| `generate --template story_v1 --topic "..." [--duration 18] [--plan-only]` | full pipeline (PRD §46) |
+| `templates` · `doctor` | list templates · environment check |
+| `assets import [--approve-unseeded]` · `assets list` · `assets search typing desk close` · `assets set asset_001 --quality 0.9 --tags a,b` | asset library |
+| `projects create/list/show/generate` | project CRUD |
+| `projects regenerate-script ID` · `projects change-assets ID` · `projects render ID` · `projects approve ID` · `projects retry ID` | regeneration controls (PRD §24) |
+| `projects suggest ID SCENE` · `projects set-asset ID SCENE ASSET_ID` | manual B-roll override (PRD §49) |
+| `batch /app/configs/batch_30.json` | 30-video validation batch (PRD §51); writes `review.json` per project |
+
+## REST API (PRD §47)
+`POST /projects` · `GET /projects[/{id}]` · `POST /projects/{id}/generate | regenerate-script | change-assets | render | retry` (202, background job) · `POST /projects/{id}/approve` · `GET /projects/{id}/video | plan` · `GET /projects/{id}/scenes/{n}/suggestions` · `POST /projects/{id}/scenes/{n}/asset` · `GET/PATCH /assets[/{id}]` · `GET /assets/search?q=` · `POST /assets/import` · `GET /templates` · `GET /personas` · `GET /health`
+
+Statuses: `DRAFT → GENERATING_SCRIPT → GENERATING_VOICE → PLANNING → SELECTING_ASSETS → GENERATING_CAPTIONS → RENDERING → READY → APPROVED` (or `FAILED`, with `error` = `stage: reason`; `retry` resumes from that stage).
+
+## Layout
+```
+backend/app/
+  config/      settings (.env) + JSON config loaders        configs/
+  schemas/     pydantic: configs, script, VideoJSON…          personas/young_professional.json
+  assets/      ffprobe metadata, importer, selector (scoring)  templates/{story,list,pov,problem_solution}_v1.json
+  llm/         base | openai_provider | fake | prompts         captions/dynamic_center.json
+  voice/       base | elevenlabs | fake | alignment            batch_30.json
+  content/     script_generator, scene_planner, asset_assignment
+  captions/    chunking + ASS writer (safe zones)            storage/   voices/ renders/ projects/<id>/ temp/ music/
+  renderer/    ffmpeg (2-stage), filters, audio, subtitles, qc   assets/    your B-roll (+ broll_database.json seed)
+  projects/    service (pipeline, versioned artifacts, controls), jobs
+  api/         FastAPI app      cli.py  (typer)
+```
+
+Per project `storage/projects/<id>/` keeps every artifact version: `script_vN.json`, `voice_vN.mp3` + `.words.json`, `plan_vN.json` (Video JSON), `final.mp4` (latest good render); renders live in `storage/renders/<id>/render_vN.mp4`.
+
+## How selection & rendering work
+* **Assets**: `assets import` reads technical metadata with ffprobe and semantic metadata from `assets/broll_database.json` (description/tags/shot) + cheap inference (action from filename, location/mood from text). Seeded clips are `approved=true`; new unseeded files are unapproved until you `assets set ... --approved true`.
+* **Selection** (PRD §9/§31/§32): scene → query tags (+synonyms) → candidates from DB with `relevance × quality × freshness` (freshness 1.0 / 0.9 / 0.7 / 0.45 / 0.2 by last use) → top 12 per scene → LLM ranks → validated unique pick → random segment inside `usable_start..usable_end` (seeded; *Render Again* changes the seed).
+* **Scene planning** (PRD §17/§30): the LLM returns word-index ranges + visual intent + tags + optional overlay; the backend snaps them to the **real word timestamps**, merges <1.5 s shots, splits >4 s shots, caps overlays to 1–3 and makes scenes contiguous up to voice end + 0.35 s. Heuristic planner is the fallback.
+* **Render** (PRD §18/§19): stage 1 per scene — trim, cover-scale, jittered crop, subtle 2.5–5 % zoom in/out, 30 fps; stage 2 — concat, burn ASS captions (2–5 word chunks, emphasised word, pop animation, TikTok safe zones) + overlays, voice `loudnorm`, optional music at −20 dB with sidechain ducking, H.264/AAC, `+faststart`. Then QC (PRD §41): 1080×1920, 30 fps, h264/aac, 10–30 s, size.
+* **Duration control** (PRD §39): word budget ≈ 2.5 words/s; if the synthesized voice exceeds the template/persona max, the script is shortened and re-voiced (max 2 rewrites).
+
+## Music
+Drop royalty-free `<category>_NN.mp3` files into `storage/music/` (`upbeat_01.mp3`, `productivity_soft_01.mp3`, `minimal_01.mp3`…). Templates choose a category; empty folder = voice-only.
+
+## Tests
+`make test` runs the whole suite in the container (ffmpeg with libass). Locally `backend/.venv/bin/pytest` runs everything except libass-dependent renders.

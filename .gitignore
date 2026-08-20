@@ -1,0 +1,18 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+# env
+.env
+backend/.env
+# storage (generated artifacts)
+storage/*
+!storage/music/
+storage/music/*
+!storage/music/README.md
+# media
+assets/
+output/
+.DS_Store

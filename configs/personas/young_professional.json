@@ -1,0 +1,27 @@
+{
+  "id": "young_professional",
+  "name": "Young Professional",
+  "language": "en-US",
+  "audience": "US professionals aged 20-30",
+  "topics": ["productivity", "career", "networking", "AI", "useful apps", "workplace", "technology"],
+  "tone": ["casual", "intelligent", "concise", "slightly sarcastic", "TikTok-native"],
+  "avoid": [
+    "corporate language",
+    "exaggerated marketing",
+    "fake personal stories",
+    "excessive CTA",
+    "hard selling",
+    "unverifiable claims"
+  ],
+  "target_duration": 18,
+  "max_duration": 25,
+  "voice": {
+    "provider": "elevenlabs",
+    "voice_id": "${ELEVENLABS_VOICE_ID}",
+    "model_id": "eleven_multilingual_v2",
+    "speed": 1.05,
+    "stability": 0.55,
+    "similarity_boost": 0.75
+  },
+  "default_music_category": "productivity_soft"
+}

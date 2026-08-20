@@ -1,0 +1,67 @@
+"""Deterministic offline LLM used for tests and dry runs."""
+from __future__ import annotations
+
+from app.schemas.configs import PersonaConfig, TemplateConfig
+from app.schemas.pipeline import (
+    AssetRankOutput, NormalizedScene, SceneAssetChoice, ScenePlanOutput, ScriptOutput, ScriptSection, WordTiming,
+)
+
+_FILLER = (
+    "Most people still do this the slow way. You sit there, you type, you miss half of it, "
+    "and then you spend another twenty minutes cleaning it up. Your phone already does this for you. "
+    "Record it, transcribe it, summarize it, done. Nobody is grading your effort here. "
+    "The tool exists, it is cheap, and it is honestly faster than you. Stop pretending manual is noble."
+).split()
+
+
+class FakeLLM:
+    name = "fake"
+
+    def generate_script(self, *, persona: PersonaConfig, template: TemplateConfig, topic: str, target_duration: float) -> ScriptOutput:
+        from app.content.script_generator import target_word_range
+
+        lo, hi = target_word_range(target_duration)
+        total = (lo + hi) // 2
+        return self._build(template, topic, total)
+
+    def shorten_script(self, *, persona: PersonaConfig, template: TemplateConfig, script: ScriptOutput, target_words: int, reason: str) -> ScriptOutput:
+        from app.content.script_generator import words_of
+
+        current = len(words_of(script.full_text))
+        return self._build(template, script.hook, min(target_words, max(8, current - 8)))
+
+    def _build(self, template: TemplateConfig, topic: str, total_words: int) -> ScriptOutput:
+        sections: list[ScriptSection] = []
+        remaining = total_words
+        pool = list(_FILLER)
+        cursor = 0
+        for i, sec in enumerate(template.sections):
+            n = max(3, int(round(total_words * sec.weight))) if i < len(template.sections) - 1 else max(3, remaining)
+            n = min(n, remaining) if i < len(template.sections) - 1 else n
+            if sec.type == "hook":
+                words = (f"{topic.rstrip('.')}?".split() + pool)[:n]
+            else:
+                words = [pool[(cursor + k) % len(pool)] for k in range(n)]
+                cursor += n
+            text = " ".join(words).strip()
+            if not text.endswith((".", "?", "!")):
+                text += "."
+            sections.append(ScriptSection(type=sec.type, text=text))
+            remaining -= n
+        return ScriptOutput(hook=sections[0].text, sections=sections)
+
+    def plan_scenes(self, *, persona: PersonaConfig, template: TemplateConfig, topic: str, script: ScriptOutput, words: list[WordTiming], voice_duration: float) -> ScenePlanOutput:
+        from app.content.scene_planner import heuristic_plan
+
+        return heuristic_plan(script, words, template)
+
+    def rank_assets(self, *, topic: str, scenes: list[NormalizedScene], candidates: dict[int, list[dict]]) -> AssetRankOutput:
+        used: set[str] = set()
+        choices = []
+        for sc in scenes:
+            for c in candidates.get(sc.order, []):
+                if c["asset_id"] not in used:
+                    used.add(c["asset_id"])
+                    choices.append(SceneAssetChoice(scene_order=sc.order, asset_id=c["asset_id"], reason="top candidate"))
+                    break
+        return AssetRankOutput(choices=choices)
