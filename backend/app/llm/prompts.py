@@ -7,14 +7,50 @@ from app.schemas.configs import PersonaConfig, TemplateConfig
 from app.schemas.pipeline import NormalizedScene, ScriptOutput, WordTiming
 
 
+_CLOSING = {
+    "punchline_no_cta": "End on a single punchline. No call to action, no 'follow/like/comment'.",
+    "question": "End with one short question to the viewer. No 'follow/like'.",
+    "soft_follow": "End on a punchline; at most a very light 'more of this tomorrow' style invite, never 'like and subscribe'.",
+}
+_PRODUCT_POLICY = {
+    "never": "Never mention the creator's own products.",
+    "occasional_soft": "You MAY mention one of the creator's products only when the topic is directly about that problem, at most once, "
+                       "phrased casually ('I built a small tool for this called X'), never as a pitch. Use only the name and the "
+                       "one-liner given — never invent features, prices or results. Most videos should mention no product at all.",
+    "problem_solution_only": "Mention a product only in problem/solution templates as the solution, casually, name + one-liner only; "
+                             "never invent features.",
+}
+
+
 def persona_block(p: PersonaConfig) -> str:
-    return (
-        f"PERSONA: {p.name}\n"
-        f"Audience: {p.audience}\nLanguage: {p.language}\n"
-        f"Tone: {', '.join(p.tone)}\n"
-        f"Topics they cover: {', '.join(p.topics)}\n"
-        f"Never: {', '.join(p.avoid)}\n"
-    )
+    lines = [f"PERSONA: {p.name}"]
+    if p.identity:
+        i = p.identity
+        who = f"You ARE {i.name}"
+        if i.age:
+            who += f", {i.age}"
+        if i.location:
+            who += f", {i.location}"
+        if i.background:
+            who += f" — {i.background}"
+        lines.append(who + ".")
+        lines.append(f"Speak as this person in {i.speaks_as}. Only claim experiences consistent with this background; no invented anecdotes with specifics you weren't given.")
+    lines += [
+        f"Audience: {p.audience}",
+        f"Language: {p.language}",
+        f"Tone: {', '.join(p.tone)}",
+        f"Content pillars: {'; '.join(p.topics)}",
+        f"Never: {', '.join(p.avoid)}",
+    ]
+    if p.tools:
+        lines.append("Tools this person really uses (reference only these when naming tools): " + "; ".join(p.tools))
+    if p.products and p.product_mention_policy != "never":
+        prods = "; ".join(f"{x.name} — {x.one_liner}" if x.one_liner else x.name for x in p.products)
+        lines.append(f"Own products: {prods}. {_PRODUCT_POLICY[p.product_mention_policy]}")
+    else:
+        lines.append(_PRODUCT_POLICY["never"])
+    lines.append("Closing: " + _CLOSING.get(p.closing_style, _CLOSING["punchline_no_cta"]))
+    return "\n".join(lines) + "\n"
 
 
 def template_block(t: TemplateConfig) -> str:

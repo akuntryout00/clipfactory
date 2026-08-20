@@ -24,7 +24,7 @@ def svc(session, mini_assets, tmp_path):
 def test_create_project_defaults(svc):
     p = svc.create_project(topic="Stop taking meeting notes manually", template_id="story_v1")
     assert p.status == ProjectStatus.DRAFT.value
-    assert p.persona_id == "young_professional"
+    assert p.persona_id == "michael"
     assert p.target_duration == 18
     assert p.id.startswith("proj_")
 

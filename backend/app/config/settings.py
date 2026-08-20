@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     render_threads: int = 0  # 0 = ffmpeg default
 
     # misc
-    default_persona: str = "young_professional"
+    default_persona: str = "michael"
     log_level: str = "INFO"
 
     @property

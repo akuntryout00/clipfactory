@@ -16,6 +16,19 @@ class VoiceConfig(BaseModel):
     style: float = 0.0
 
 
+class PersonaIdentity(BaseModel):
+    name: str
+    age: int | None = None
+    location: str | None = None
+    background: str | None = None
+    speaks_as: str = "first person ('I'), talking to one viewer ('you')"
+
+
+class ProductRef(BaseModel):
+    name: str
+    one_liner: str = ""
+
+
 class PersonaConfig(BaseModel):
     id: str
     name: str
@@ -24,6 +37,11 @@ class PersonaConfig(BaseModel):
     topics: list[str]
     tone: list[str]
     avoid: list[str] = []
+    identity: PersonaIdentity | None = None
+    tools: list[str] = []
+    products: list[ProductRef] = []
+    product_mention_policy: Literal["never", "occasional_soft", "problem_solution_only"] = "never"
+    closing_style: Literal["punchline_no_cta", "question", "soft_follow"] = "punchline_no_cta"
     target_duration: float = 18
     max_duration: float = 25
     speech_rate_wps: float = 2.5  # measured spoken words/second for this voice (calibrate from real runs)

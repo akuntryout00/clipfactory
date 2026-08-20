@@ -32,7 +32,7 @@ def test_health_and_templates(client):
     assert client.get("/health").json()["status"] == "ok"
     ids = {t["id"] for t in client.get("/templates").json()}
     assert ids == {"story_v1", "list_v1", "pov_v1", "problem_solution_v1"}
-    assert client.get("/personas").json()[0]["id"] == "young_professional"
+    assert {p["id"] for p in client.get("/personas").json()} >= {"michael", "young_professional"}
 
 
 def test_assets_list_patch_and_search(client):
