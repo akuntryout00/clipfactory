@@ -20,6 +20,14 @@ class ScriptOutput(BaseModel):
     def full_text(self) -> str:
         return " ".join(s.text.strip() for s in self.sections if s.text.strip())
 
+    def for_speech(self) -> "ScriptOutput":
+        """Copy with section texts normalised for TTS (e.g. 'POV:' dropped). Word counts drive section ranges."""
+        from app.voice.normalize import speech_text
+
+        secs = [ScriptSection(type=sec.type, text=speech_text(sec.text)) for sec in self.sections]
+        secs = [sec for sec in secs if sec.text]
+        return ScriptOutput(hook=speech_text(self.hook) or (secs[0].text if secs else ""), sections=secs, notes=self.notes)
+
 
 # ---------- voice ----------
 

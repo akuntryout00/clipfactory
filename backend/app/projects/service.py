@@ -170,7 +170,7 @@ class ProjectService:
             while True:
                 version = p.voice_version + 1
                 out = self.project_dir(p.id) / f"voice_v{version}.mp3"
-                res = self.voice.synthesize(text=script.full_text, voice=persona.voice, out_path=out)
+                res = self.voice.synthesize(text=script.for_speech().full_text, voice=persona.voice, out_path=out)
                 p.voice_version = version
                 (self.project_dir(p.id) / f"voice_v{version}.words.json").write_text(json.dumps([w.model_dump() for w in res.words]))
                 vg = VoiceGeneration(project_id=p.id, version=version, script_version=p.script_version, provider=res.provider,
@@ -203,7 +203,7 @@ class ProjectService:
             raise RuntimeError("run_voice first")
         self._set_status(p, ProjectStatus.PLANNING, "Planning scenes...")
         try:
-            script = self.load_script(p.id, p.script_version)
+            script = self.load_script(p.id, p.script_version).for_speech()  # spoken words == alignment words
             words = self.load_words(p.id, p.voice_version)
             vg = self._voice_row(p)
             scenes = None

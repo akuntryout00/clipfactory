@@ -36,6 +36,9 @@ def build_caption_chunks(words: list[WordTiming], style: CaptionStyleConfig) -> 
         buf.clear()
 
     for i, w in enumerate(words):
+        # would this word overflow the 2-line character budget? flush first (never squeeze later)
+        if buf and sum(len(x.word) for x in buf) + len(buf) + len(w.word) > max_chars:
+            flush()
         buf.append(w)
         chars = sum(len(x.word) for x in buf) + len(buf) - 1
         hard_break = _ends_clause(w.word) and len(buf) >= min_w
@@ -139,11 +142,16 @@ def write_ass(chunks: list[CaptionChunk], overlays: list[tuple[float, float, str
     for c in chunks:
         words = [_esc(w) for w in c.text.split()]
         wrapped = _wrap_words(words, style.max_chars_per_line, style.max_lines)
+        longest = max(sum(len(words[i]) for i in line) + len(line) - 1 for line in wrapped)
+        shrink = ""
+        if longest > style.max_chars_per_line:  # safety net: scale the font so the longest line fits the safe width
+            pct = max(60, int(100 * style.max_chars_per_line / longest))
+            shrink = f"{{\\fscx{pct}\\fscy{pct}}}"
         if c.emphasis_index is not None and 0 <= c.emphasis_index < len(words):
             w = words[c.emphasis_index]
             words[c.emphasis_index] = f"{{\\1c{style.emphasis_color}}}{w}{{\\1c{style.primary_color}}}"
         text = "\\N".join(" ".join(words[i] for i in line) for line in wrapped)
-        lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},Caption,,0,0,0,,{pop}{text}")
+        lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},Caption,,0,0,0,,{shrink}{pop}{text}")
     for start, end, text in overlays:
         fade = f"{{\\fad({ov.fade_ms},{ov.fade_ms})}}"
         wrapped = _wrap(_esc(text), ov.max_chars_per_line, 3)
