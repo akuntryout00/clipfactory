@@ -26,6 +26,7 @@ class PersonaConfig(BaseModel):
     avoid: list[str] = []
     target_duration: float = 18
     max_duration: float = 25
+    speech_rate_wps: float = 2.5  # measured spoken words/second for this voice (calibrate from real runs)
     voice: VoiceConfig
     default_music_category: str | None = None
 

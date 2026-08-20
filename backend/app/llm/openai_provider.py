@@ -45,7 +45,7 @@ class OpenAIProvider:
     def generate_script(self, *, persona: PersonaConfig, template: TemplateConfig, topic: str, target_duration: float) -> ScriptOutput:
         from app.content.script_generator import target_word_range
 
-        lo, hi = target_word_range(target_duration)
+        lo, hi = target_word_range(target_duration, getattr(persona, 'speech_rate_wps', 2.5))
         return self._parse(prompts.SCRIPT_SYSTEM, prompts.script_user_prompt(persona, template, topic, target_duration, lo, hi), ScriptOutput)
 
     def shorten_script(self, *, persona: PersonaConfig, template: TemplateConfig, script: ScriptOutput, target_words: int, reason: str) -> ScriptOutput:

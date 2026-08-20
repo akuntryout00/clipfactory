@@ -135,3 +135,13 @@ def test_choose_segment_stays_in_usable_range_and_varies():
 def test_choose_segment_when_clip_too_short_returns_usable_start():
     a = Asset(id="a", file="x", duration=2.0, usable_start=0.2, usable_end=1.8)
     assert choose_segment(a, 2.5, random.Random(1)) == 0.2
+
+
+def test_candidate_dict_flags_recently_used(session, mini_assets):
+    import_assets(session, mini_assets)
+    a = session.get(Asset, "asset_001")
+    a.last_used_at = datetime.now(timezone.utc)
+    session.commit()
+    cands = {c.asset.id: c.as_dict() for c in find_candidates(session, ["typing", "coffee"], limit=10)}
+    assert cands["asset_001"]["recently_used"] is True
+    assert cands["asset_002"]["recently_used"] is False

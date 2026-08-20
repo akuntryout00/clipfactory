@@ -158,3 +158,14 @@ def test_heuristic_plan_produces_4_to_8_scenes_for_18s():
     plan = heuristic_plan(s, words, tpl)
     scenes = normalize_plan(plan, words, tpl, voice_duration=18.0)
     assert 4 <= len(scenes) <= 8
+
+
+def test_target_word_range_respects_persona_speech_rate():
+    fast = target_word_range(18, wps=2.5)
+    slow = target_word_range(18, wps=2.3)
+    assert slow[0] < fast[0] and slow[1] < fast[1]
+
+
+def test_persona_has_speech_rate_default():
+    p = load_persona("young_professional")
+    assert 2.0 <= p.speech_rate_wps <= 2.6

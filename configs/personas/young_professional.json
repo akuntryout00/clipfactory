@@ -15,6 +15,7 @@
   ],
   "target_duration": 18,
   "max_duration": 25,
+  "speech_rate_wps": 2.35,
   "voice": {
     "provider": "elevenlabs",
     "voice_id": "${ELEVENLABS_VOICE_ID}",

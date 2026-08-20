@@ -88,6 +88,8 @@ RANK_SYSTEM = (
     "- Never use the same asset_id for two scenes.\n"
     "- Prefer visual match to the scene intent, then variety between consecutive scenes (alternate locations/shot sizes), "
     "then the provided score. Avoid two consecutive scenes with the same action.\n"
+    "- Candidates marked recently_used=True were already used in another video today; avoid them unless they are clearly the "
+    "only good match, so videos do not all look alike.\n"
     "Output JSON only."
 )
 
@@ -98,7 +100,7 @@ def rank_user_prompt(topic: str, scenes: list[NormalizedScene], candidates: dict
         cands = candidates.get(sc.order, [])
         c_lines = "\n".join(
             f"    - {c['asset_id']}: {c.get('description') or ''} | action={c.get('action')} location={c.get('location')} "
-            f"shot={c.get('shot')} dur={c.get('duration')} score={c.get('score')}" for c in cands)
+            f"shot={c.get('shot')} dur={c.get('duration')} score={c.get('score')} recently_used={c.get('recently_used')}" for c in cands)
         blocks.append(f"SCENE {sc.order} [{sc.start:.1f}-{sc.end:.1f}s] ({sc.section}) intent: {sc.intent}\n  candidates:\n{c_lines}")
     return f"TOPIC: {topic}\n\n" + "\n\n".join(blocks) + "\n\nChoose one asset per scene."
 

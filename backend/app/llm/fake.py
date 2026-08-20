@@ -20,7 +20,7 @@ class FakeLLM:
     def generate_script(self, *, persona: PersonaConfig, template: TemplateConfig, topic: str, target_duration: float) -> ScriptOutput:
         from app.content.script_generator import target_word_range
 
-        lo, hi = target_word_range(target_duration)
+        lo, hi = target_word_range(target_duration, getattr(persona, 'speech_rate_wps', 2.5))
         total = (lo + hi) // 2
         return self._build(template, topic, total)
 

@@ -14,9 +14,9 @@ def words_of(text: str) -> list[str]:
     return [w for w in re.split(r"\s+", text.strip()) if w]
 
 
-def target_word_range(duration: float) -> tuple[int, int]:
-    """PRD §39: 15 s → ~35–45, 20 s → ~45–60, 25 s → ~60–70 words."""
-    centre = duration * WORDS_PER_SECOND
+def target_word_range(duration: float, wps: float = WORDS_PER_SECOND) -> tuple[int, int]:
+    """PRD §39: 15 s → ~35–45, 20 s → ~45–60, 25 s → ~60–70 words (at 2.5 wps; persona may calibrate wps)."""
+    centre = duration * wps
     return int(round(centre * 0.88)), int(round(centre * 1.15))
 
 

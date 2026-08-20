@@ -122,7 +122,7 @@ def normalize_plan(plan: ScenePlanOutput, words: list[WordTiming], template: Tem
     stack = list(fixed)
     while stack:
         s = stack.pop(0)
-        if dur_of(s) > smax * 1.25 and s.last_word > s.first_word:
+        if dur_of(s) > smax * 1.15 and s.last_word > s.first_word:
             mid_t = words[s.first_word].start + dur_of(s) / 2
             best = min(range(s.first_word, s.last_word), key=lambda i: abs(words[i].end - mid_t) - (0.3 if re.search(r"[.!?,;:]$", words[i].word) else 0))
             a = PlannedScene(section=s.section, first_word=s.first_word, last_word=best, intent=s.intent, query_tags=s.query_tags, overlay_text=s.overlay_text)
