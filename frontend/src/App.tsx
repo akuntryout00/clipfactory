@@ -1,5 +1,5 @@
 import { NavLink, Route, Routes, Navigate } from "react-router-dom"
-import { Clapperboard, Film, LayoutList, Plus, Settings2, SlidersHorizontal } from "lucide-react"
+import { Clapperboard, FlaskConical, Film, LayoutList, Plus, Settings2, SlidersHorizontal } from "lucide-react"
 import { cn } from "@/lib/utils"
 import ProjectsPage from "@/pages/ProjectsPage"
 import GeneratePage from "@/pages/GeneratePage"
@@ -7,6 +7,8 @@ import ProjectPage from "@/pages/ProjectPage"
 import AssetsPage from "@/pages/AssetsPage"
 import TemplatesPage from "@/pages/TemplatesPage"
 import SystemPage from "@/pages/SystemPage"
+import LabPage from "@/pages/LabPage"
+import LabVideoPage from "@/pages/LabVideoPage"
 
 const nav = [
   { to: "/projects", label: "Projects", icon: LayoutList },
@@ -36,6 +38,14 @@ export default function App() {
             </NavLink>
           ))}
         </nav>
+        <div className="mt-6 border-t border-sidebar-border pt-4">
+          <div className="mb-1 px-2.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Separate module</div>
+          <NavLink to="/lab" className={({ isActive }) => cn(
+            "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-2 focus-visible:outline-ring",
+            isActive && "bg-sidebar-accent text-sidebar-accent-foreground font-medium")}>
+            <FlaskConical className="size-4" /> AI Lab
+          </NavLink>
+        </div>
         <div className="mt-auto px-2 text-[11px] leading-relaxed text-muted-foreground">
           Persona <span className="text-foreground">Michael</span><br />1 account · 4 templates
         </div>
@@ -49,6 +59,8 @@ export default function App() {
           <Route path="/assets" element={<AssetsPage />} />
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/system" element={<SystemPage />} />
+          <Route path="/lab" element={<LabPage />} />
+          <Route path="/lab/:id" element={<LabVideoPage />} />
         </Routes>
       </main>
     </div>

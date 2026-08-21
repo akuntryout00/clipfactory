@@ -1,4 +1,4 @@
-import type { Artifacts, Asset, Candidate, ClipAnalysis, Persona, Plan, Project, SystemInfo, Template } from "./types"
+import type { Artifacts, Asset, Candidate, ClipAnalysis, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
 
 export const API = import.meta.env.VITE_API_BASE || "/api"
 
@@ -58,6 +58,19 @@ export const api = {
       xhr.onerror = () => reject(new Error("upload failed"))
       xhr.send(form)
     }),
+}
+
+export const lab = {
+  list: () => req<LabVideo[]>("/lab/videos"),
+  get: (id: string) => req<LabVideo>(`/lab/videos/${id}`),
+  create: (body: { prompt: string; target_duration: number; style?: string | null }) => req<LabVideo>("/lab/videos", { method: "POST", body: JSON.stringify(body) }),
+  generateImages: (id: string, onlyMissing = false) => req<unknown>(`/lab/videos/${id}/generate-images${onlyMissing ? "?only_missing=true" : ""}`, { method: "POST" }),
+  regenerate: (id: string, index: number, prompt?: string | null) => req<unknown>(`/lab/videos/${id}/keyframes/${index}/regenerate`, { method: "POST", body: JSON.stringify({ prompt: prompt ?? null }) }),
+  animate: (id: string) => req<unknown>(`/lab/videos/${id}/animate`, { method: "POST" }),
+  delete: (id: string) => req<void>(`/lab/videos/${id}`, { method: "DELETE" }),
+  imageUrl: (id: string, index: number, v: number) => `${API}/lab/videos/${id}/keyframes/${index}/image?v=${v}`,
+  segmentUrl: (id: string, index: number) => `${API}/lab/videos/${id}/segments/${index}/video`,
+  videoUrl: (id: string) => `${API}/lab/videos/${id}/video`,
 }
 
 export const media = {

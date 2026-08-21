@@ -30,8 +30,11 @@ log = logging.getLogger(__name__)
 
 
 def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | None = None,
-               service_kwargs: dict | None = None, configs_dir: Path | None = None) -> FastAPI:
+               service_kwargs: dict | None = None, configs_dir: Path | None = None, lab_kwargs: dict | None = None) -> FastAPI:
     service_kwargs = dict(service_kwargs or {})
+    lab_kwargs = dict(lab_kwargs or {})
+    if service_kwargs.get("storage_dir") and "storage_dir" not in lab_kwargs:
+        lab_kwargs["storage_dir"] = service_kwargs["storage_dir"]
     if configs_dir is not None:
         service_kwargs["configs_dir"] = Path(configs_dir)
     cfg_dir: Path = Path(configs_dir) if configs_dir is not None else get_settings().configs_dir
@@ -48,9 +51,12 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
         else:
             app.state.session_factory = session_factory
         app.state.jobs = jobs or JobRunner()
+        app.state.lab_jobs = jobs or JobRunner()  # separate runner for the isolated AI Lab module
         app.state.service_kwargs = service_kwargs
+        app.state.lab_kwargs = lab_kwargs
         yield
         app.state.jobs.shutdown()
+        app.state.lab_jobs.shutdown()
 
     app = FastAPI(title="TikTok Content Factory", version="0.1.0", lifespan=lifespan)
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Range", "Accept-Ranges"])
@@ -194,6 +200,11 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
             "assets_approved": db.execute(select(func.count()).select_from(Asset).where(Asset.approved.is_(True))).scalar_one(),
             "projects_count": db.execute(select(func.count()).select_from(VideoProject)).scalar_one(),
             "music_tracks": sorted(p.name for p in (storage_dir(request) / "music").glob("*.mp3")) if (storage_dir(request) / "music").is_dir() else [],
+            "lab": {
+                "planner": st.lab_planner, "image_provider": st.lab_image_provider, "image_model": st.openai_image_model,
+                "image_size": st.openai_image_size, "video_provider": st.lab_video_provider, "video_model": st.google_video_model,
+                "google_key_set": bool(st.google_api_key),
+            },
         }
 
     # ---------- assets ----------
@@ -530,6 +541,9 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
             raise HTTPException(404, "asset not found")
         return run_job(request, project_id, "scene-override", lambda s: s.override_scene_asset(project_id, order, body.asset_id))
 
+    from app.lab.api import router as lab_router
+
+    app.include_router(lab_router)
     return app
 
 

@@ -23,6 +23,11 @@ export default function SystemPage() {
             <div>{s.ffmpeg}</div><div>captions (libass) {ok(s.render_ok)}</div>{s.render_missing.map(m => <div key={m} className="text-fail">{m}</div>)}</CardContent></Card>
           <Card><CardHeader><CardTitle className="text-sm">Library</CardTitle></CardHeader><CardContent className="space-y-1 font-mono text-xs">
             <div>assets {s.assets_count} ({s.assets_approved} approved)</div><div>projects {s.projects_count}</div><div>music {s.music_tracks.length ? s.music_tracks.join(", ") : "none (voice only)"}</div></CardContent></Card>
+          {s.lab && <Card><CardHeader><CardTitle className="text-sm">AI Lab (separate module)</CardTitle></CardHeader><CardContent className="space-y-1 font-mono text-xs">
+            <div>images {s.lab.image_provider} · {s.lab.image_model} · {s.lab.image_size}</div>
+            <div>video {s.lab.video_provider} · {s.lab.video_model}</div>
+            <div>planner {s.lab.planner}</div>
+            <div>GOOGLE_API_KEY {ok(s.lab.google_key_set)}</div></CardContent></Card>}
           <Card><CardHeader><CardTitle className="text-sm">Paths</CardTitle></CardHeader><CardContent className="space-y-1 break-all font-mono text-xs">
             <div>assets {s.assets_dir}</div><div>storage {s.storage_dir}</div><div>db {s.database_url}</div><div>persona {s.default_persona}</div></CardContent></Card>
         </>)}

@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     elevenlabs_api_key: str | None = None
     elevenlabs_voice_id: str | None = None
 
+    # AI Lab (isolated module): OpenAI images + Google video
+    openai_image_model: str = "gpt-image-2"
+    openai_image_size: str = "1024x1536"
+    openai_image_quality: str = "high"
+    google_api_key: str | None = None
+    google_video_model: str = "gemini-omni-flash"
+    lab_planner: str = "openai"          # openai | fake
+    lab_image_provider: str = "openai"   # openai | fake
+    lab_video_provider: str = "google"   # google | fake
+
     # storage
     database_url: str = f"sqlite:///{REPO_DIR / 'storage' / 'ttcf.db'}"
     storage_dir: Path = REPO_DIR / "storage"

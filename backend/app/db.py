@@ -38,6 +38,7 @@ def get_sessionmaker() -> sessionmaker:
 
 def init_db() -> None:
     from app import models  # noqa: F401  (register tables)
+    from app.lab import models as lab_models  # noqa: F401  (AI Lab tables, isolated module)
 
     Base.metadata.create_all(get_engine())
 

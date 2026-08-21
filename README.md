@@ -48,6 +48,13 @@ Dry run without any API keys: set `LLM_PROVIDER=fake` and `VOICE_PROVIDER=fake` 
 
 Dev: `make web-dev` (Vite on :3000 proxying to the api container on :8000).
 
+## AI Lab (separate module, http://localhost:3000/lab)
+Fully AI-generated vertical videos, isolated from the content factory (own tables `lab_*`, own storage `storage/lab/`, own routes `/lab/*`, own UI section).
+1. **Describe** the video + length (15–25 s) + optional style → an LLM writes a storyboard: a *style guide* for character/wardrobe/palette consistency and N keyframes (N = segments + 1; segments are 4–8 s each).
+2. **Keyframes (OpenAI `gpt-image-2`)** — each keyframe is generated as a portrait image and cropped/scaled to exactly 1080×1920. Review; edit any prompt and regenerate a single frame (segments touching it are reset).
+3. **Animate (Google `gemini-omni-flash` via google-genai)** — every consecutive frame pair (first → last frame) becomes one 9:16 clip of `segment_seconds`; clips are normalised (1080×1920/30fps/h264) and concatenated into `final.mp4`.
+Env: `GOOGLE_API_KEY`, `GOOGLE_VIDEO_MODEL`, `OPENAI_IMAGE_MODEL` (+ `LAB_*_PROVIDER=fake` for offline runs). API: `POST/GET /lab/videos`, `GET/DELETE /lab/videos/{id}`, `POST …/generate-images | keyframes/{i}/regenerate | animate`, `GET …/keyframes/{i}/image | segments/{i}/video | video`.
+
 ## REST API (PRD §47)
 `POST /projects` · `GET /projects[/{id}]` · `DELETE /projects/{id}` · `GET /projects/{id}/artifacts | voice | renders/{v}/video` · `POST /assets/upload` (multipart) · `DELETE /assets/{id}` · `GET /assets/{id}/file | thumbnail` · `POST /assets/enrich` · `GET /system` · · `POST /projects/{id}/generate | regenerate-script | change-assets | render | retry` (202, background job) · `POST /projects/{id}/approve` · `GET /projects/{id}/video | plan` · `GET /projects/{id}/scenes/{n}/suggestions` · `POST /projects/{id}/scenes/{n}/asset` · `GET/PATCH /assets[/{id}]` · `GET /assets/search?q=` · `POST /assets/import` · `GET/POST /templates` · `PUT/DELETE /templates/{id}` · `GET /caption-styles` · `POST /assets/analyze` (AI autocomplete) · `GET /personas` · `GET /health`
 
