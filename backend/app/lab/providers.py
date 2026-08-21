@@ -112,9 +112,10 @@ class OpenAIImageGen:
             # continuity: edit endpoint with the previous keyframe as the reference image
             edit_prompt = ("Use the reference image for continuity: keep the SAME character (face, hair, wardrobe), the same place, "
                            "palette, lens and rendering style. Now create the NEXT frame of the story:\n" + prompt)
+            extra = {"input_fidelity": s.openai_image_input_fidelity} if self.model == "gpt-image-1" else {}  # gpt-image-2 rejects it
             with reference.open("rb") as fh:
                 resp = self._client.images.edit(model=self.model, image=[fh], prompt=edit_prompt, n=1, size=self.size,
-                                                quality=s.openai_image_quality, input_fidelity=s.openai_image_input_fidelity)
+                                                quality=s.openai_image_quality, **extra)
         else:
             kwargs = dict(model=self.model, prompt=prompt, n=1, size=self.size)
             if not self.model.startswith("dall-e"):
