@@ -1,4 +1,5 @@
 """Pydantic models for config-driven persona / template / caption style."""
+
 from __future__ import annotations
 
 from typing import Literal

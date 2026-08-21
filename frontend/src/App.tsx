@@ -1,6 +1,8 @@
 import { NavLink, Route, Routes, Navigate } from "react-router-dom"
 import { Clapperboard, FlaskConical, Film, LayoutList, Plus, Settings2, SlidersHorizontal } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useQuery } from "@tanstack/react-query"
+import { api } from "@/lib/api"
 import ProjectsPage from "@/pages/ProjectsPage"
 import GeneratePage from "@/pages/GeneratePage"
 import ProjectPage from "@/pages/ProjectPage"
@@ -18,6 +20,19 @@ const nav = [
   { to: "/system", label: "System", icon: Settings2 },
 ]
 
+function SidebarFooter() {
+  const { data: personas } = useQuery({ queryKey: ["personas"], queryFn: api.personas, staleTime: 60_000 })
+  const { data: templates } = useQuery({ queryKey: ["templates"], queryFn: api.templates, staleTime: 60_000 })
+  const { data: sys } = useQuery({ queryKey: ["system"], queryFn: api.system, staleTime: 60_000 })
+  const active = personas?.find(p => p.id === sys?.default_persona) ?? personas?.[0]
+  return (
+    <div className="mt-auto px-2 text-[11px] leading-relaxed text-muted-foreground">
+      Persona <span className="text-foreground">{active?.identity?.name ?? active?.name ?? "—"}</span><br />
+      {templates?.length ?? 0} templates · no auto-posting
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -25,7 +40,7 @@ export default function App() {
         <div className="mb-8 flex items-center gap-2 px-2">
           <span className="grid size-8 place-items-center rounded-md bg-primary text-primary-foreground"><Clapperboard className="size-4" /></span>
           <div className="leading-tight">
-            <div className="font-heading text-[15px] font-bold">Content Factory</div>
+            <div className="font-heading text-[15px] font-bold">ClipFactory</div>
             <div className="text-[11px] text-muted-foreground">topic → template → MP4</div>
           </div>
         </div>
@@ -46,9 +61,7 @@ export default function App() {
             <FlaskConical className="size-4" /> AI Lab
           </NavLink>
         </div>
-        <div className="mt-auto px-2 text-[11px] leading-relaxed text-muted-foreground">
-          Persona <span className="text-foreground">Michael</span><br />1 account · 4 templates
-        </div>
+        <SidebarFooter />
       </aside>
       <main className="min-w-0 flex-1">
         <Routes>

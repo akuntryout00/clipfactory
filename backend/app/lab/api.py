@@ -1,10 +1,11 @@
 """AI Lab REST API — mounted under /lab, independent of the content-factory routes."""
+
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
@@ -41,23 +42,58 @@ class DurationBody(BaseModel):
 
 
 class KeyframeOut(BaseModel):
-    index: int; prompt: str; caption: str | None; status: str; error: str | None; version: int; image_url: str | None
+    index: int
+    prompt: str
+    caption: str | None
+    status: str
+    error: str | None
+    version: int
+    image_url: str | None
 
 
 class SegmentOut(BaseModel):
-    index: int; from_index: int; to_index: int; prompt: str | None; status: str; error: str | None; duration: float | None; video_url: str | None
-    editable: bool = False; last_edit: str | None = None; version: int = 0
+    index: int
+    from_index: int
+    to_index: int
+    prompt: str | None
+    status: str
+    error: str | None
+    duration: float | None
+    video_url: str | None
+    editable: bool = False
+    last_edit: str | None = None
+    version: int = 0
 
 
 class EventOut(BaseModel):
-    stage: str; level: str; message: str; created_at: datetime
+    stage: str
+    level: str
+    message: str
+    created_at: datetime
 
 
 class LabVideoOut(BaseModel):
-    id: str; prompt: str; style: str | None; target_duration: float; n_segments: int; segment_seconds: int; style_guide: str | None
-    status: str; stage_message: str | None; error: str | None; final_duration: float | None; image_model: str | None; video_model: str | None
-    video_provider: str | None = None; provider_label: str | None = None; supports_edit: bool = False
-    created_at: datetime; updated_at: datetime; keyframes: list[KeyframeOut] = []; segments: list[SegmentOut] = []; video_url: str | None = None
+    id: str
+    prompt: str
+    style: str | None
+    target_duration: float
+    n_segments: int
+    segment_seconds: int
+    style_guide: str | None
+    status: str
+    stage_message: str | None
+    error: str | None
+    final_duration: float | None
+    image_model: str | None
+    video_model: str | None
+    video_provider: str | None = None
+    provider_label: str | None = None
+    supports_edit: bool = False
+    created_at: datetime
+    updated_at: datetime
+    keyframes: list[KeyframeOut] = []
+    segments: list[SegmentOut] = []
+    video_url: str | None = None
     events: list[EventOut] = []
 
 
@@ -79,21 +115,63 @@ def _svc(request: Request, db: Session, provider: str | None = None) -> LabServi
 
 
 def _out(v: LabVideo, svc: LabService) -> LabVideoOut:
-    kfs = [KeyframeOut(index=k.index, prompt=k.prompt, caption=k.caption, status=k.status, error=k.error, version=k.version,
-                       image_url=f"/lab/videos/{v.id}/keyframes/{k.index}/image?v={k.version}" if k.image_path else None) for k in svc.keyframes(v.id)]
-    segs = [SegmentOut(index=s.index, from_index=s.from_index, to_index=s.to_index, prompt=s.prompt, status=s.status, error=s.error, duration=s.duration,
-                       video_url=f"/lab/videos/{v.id}/segments/{s.index}/video?v={s.version or 0}" if s.video_path else None,
-                       editable=bool(s.provider_ref), last_edit=s.last_edit, version=s.version or 0) for s in svc.segments(v.id)]
+    kfs = [
+        KeyframeOut(
+            index=k.index,
+            prompt=k.prompt,
+            caption=k.caption,
+            status=k.status,
+            error=k.error,
+            version=k.version,
+            image_url=f"/lab/videos/{v.id}/keyframes/{k.index}/image?v={k.version}" if k.image_path else None,
+        )
+        for k in svc.keyframes(v.id)
+    ]
+    segs = [
+        SegmentOut(
+            index=s.index,
+            from_index=s.from_index,
+            to_index=s.to_index,
+            prompt=s.prompt,
+            status=s.status,
+            error=s.error,
+            duration=s.duration,
+            video_url=f"/lab/videos/{v.id}/segments/{s.index}/video?v={s.version or 0}" if s.video_path else None,
+            editable=bool(s.provider_ref),
+            last_edit=s.last_edit,
+            version=s.version or 0,
+        )
+        for s in svc.segments(v.id)
+    ]
     evs = [EventOut(stage=e.stage, level=e.level, message=e.message, created_at=e.created_at) for e in svc.events(v.id)][-80:]
     from app.lab.providers import provider_label
 
     pid = v.video_provider or ("veo" if (v.video_model or "").startswith("veo") else svc.default_provider_id())
     supports_edit = pid in ("omni", "fake") or pid.startswith("fake:")
-    return LabVideoOut(id=v.id, prompt=v.prompt, style=v.style, target_duration=v.target_duration, n_segments=v.n_segments, segment_seconds=v.segment_seconds,
-                       style_guide=v.style_guide, status=v.status, stage_message=v.stage_message, error=v.error, final_duration=v.final_duration,
-                       image_model=v.image_model, video_model=v.video_model, video_provider=pid, provider_label=provider_label(pid), supports_edit=supports_edit,
-                       created_at=v.created_at, updated_at=v.updated_at,
-                       keyframes=kfs, segments=segs, video_url=f"/lab/videos/{v.id}/video" if v.final_path and v.status == "DONE" else None, events=evs)
+    return LabVideoOut(
+        id=v.id,
+        prompt=v.prompt,
+        style=v.style,
+        target_duration=v.target_duration,
+        n_segments=v.n_segments,
+        segment_seconds=v.segment_seconds,
+        style_guide=v.style_guide,
+        status=v.status,
+        stage_message=v.stage_message,
+        error=v.error,
+        final_duration=v.final_duration,
+        image_model=v.image_model,
+        video_model=v.video_model,
+        video_provider=pid,
+        provider_label=provider_label(pid),
+        supports_edit=supports_edit,
+        created_at=v.created_at,
+        updated_at=v.updated_at,
+        keyframes=kfs,
+        segments=segs,
+        video_url=f"/lab/videos/{v.id}/video" if v.final_path and v.status == "DONE" else None,
+        events=evs,
+    )
 
 
 def _job(request: Request, video_id: str, op: Callable[[LabService], None], provider: str | None = None):
@@ -227,7 +305,9 @@ def regenerate_segment(video_id: str, index: int, body: SegmentRedoBody, request
         raise HTTPException(404, "segment not found")
     if not body.prompt and not body.edit_instruction:
         raise HTTPException(422, "give a new motion prompt or an edit instruction")
-    return _job(request, video_id, lambda s: s.regenerate_segment(video_id, index, prompt=body.prompt, edit_instruction=body.edit_instruction))
+    return _job(
+        request, video_id, lambda s: s.regenerate_segment(video_id, index, prompt=body.prompt, edit_instruction=body.edit_instruction)
+    )
 
 
 @router.put("/videos/{video_id}/duration", response_model=LabVideoOut)

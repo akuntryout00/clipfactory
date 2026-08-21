@@ -1,13 +1,12 @@
-import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from typer.testing import CliRunner
-
 import app.cli as cli
+import pytest
 from app.db import Base
 from app.llm.fake import FakeLLM
 from app.renderer.ffmpeg import ffmpeg_has_filter
 from app.voice.fake import FakeVoice
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from typer.testing import CliRunner
 
 needs_libass = pytest.mark.skipif(not ffmpeg_has_filter("ass"), reason="local ffmpeg lacks libass; runs in Docker")
 runner = CliRunner()
@@ -19,8 +18,18 @@ def cli_env(mini_assets, tmp_path, monkeypatch):
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     monkeypatch.setattr(cli, "SESSION_FACTORY", factory)
-    monkeypatch.setattr(cli, "SERVICE_KWARGS", dict(llm=FakeLLM(), voice=FakeVoice(), storage_dir=tmp_path / "storage",
-                                                    assets_dir=mini_assets, render_preset="ultrafast", render_crf=30))
+    monkeypatch.setattr(
+        cli,
+        "SERVICE_KWARGS",
+        dict(
+            llm=FakeLLM(),
+            voice=FakeVoice(),
+            storage_dir=tmp_path / "storage",
+            assets_dir=mini_assets,
+            render_preset="ultrafast",
+            render_crf=30,
+        ),
+    )
     return tmp_path
 
 
@@ -45,7 +54,9 @@ def test_templates_and_project_create_show(cli_env):
 
 def test_plan_only_prints_scene_plan(cli_env):
     runner.invoke(cli.app, ["assets", "import"])
-    r = runner.invoke(cli.app, ["generate", "--template", "list_v1", "--topic", "3 productivity habits that waste your time", "--plan-only"])
+    r = runner.invoke(
+        cli.app, ["generate", "--template", "list_v1", "--topic", "3 productivity habits that waste your time", "--plan-only"]
+    )
     assert r.exit_code == 0, r.output
     assert "Script generated" in r.output and "Voice generated" in r.output and "scenes" in r.output
     assert "SCENE 1" in r.output

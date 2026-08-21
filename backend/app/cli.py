@@ -1,16 +1,16 @@
-"""ttcf — command line interface (PRD §46). Works without the API server."""
+"""clipfactory — command line interface (alias: ttcf). Works without the API server."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 import typer
 from sqlalchemy.orm import sessionmaker
 
 from app.config.settings import get_settings
 
-app = typer.Typer(help="TikTok Content Factory CLI", no_args_is_help=True, add_completion=False)
+app = typer.Typer(help="ClipFactory CLI — topic + template → vertical MP4 from your own B-roll", no_args_is_help=True, add_completion=False)
 assets_app = typer.Typer(help="Asset library commands", no_args_is_help=True)
 projects_app = typer.Typer(help="Project commands", no_args_is_help=True)
 app.add_typer(assets_app, name="assets")
@@ -49,18 +49,23 @@ def _print_plan(svc, project_id: str) -> None:
     typer.echo(f"\nScene plan v{p.plan_version} — {len(plan.scenes)} scenes, {plan.total_duration:.2f}s, seed={plan.seed}")
     for s in plan.scenes:
         ov = f'  overlay="{s.text}"' if s.text else ""
-        typer.echo(f"  SCENE {s.order} [{s.start:5.2f}-{s.end:5.2f}] {s.section or '':<12} {s.asset_id} ({s.asset_file} @ {s.asset_start:.2f}){ov}")
+        typer.echo(
+            f"  SCENE {s.order} [{s.start:5.2f}-{s.end:5.2f}] {s.section or '':<12} {s.asset_id} ({s.asset_file} @ {s.asset_start:.2f}){ov}"
+        )
 
 
 # ---------- top-level ----------
 
+
 @app.command()
-def generate(template: str = typer.Option(..., "--template", "-t", help="template id, e.g. story_v1"),
-             topic: str = typer.Option(..., "--topic", help="video topic"),
-             duration: Optional[float] = typer.Option(None, "--duration", "-d", help="target seconds (15-25)"),
-             persona: Optional[str] = typer.Option(None, "--persona"),
-             plan_only: bool = typer.Option(False, "--plan-only", help="stop after the Video JSON (no render)")):
-    """Topic + template → TikTok-ready MP4 (full pipeline)."""
+def generate(
+    template: str = typer.Option(..., "--template", "-t", help="template id, e.g. story_v1"),
+    topic: str = typer.Option(..., "--topic", help="video topic"),
+    duration: float | None = typer.Option(None, "--duration", "-d", help="target seconds (15-25)"),
+    persona: str | None = typer.Option(None, "--persona"),
+    plan_only: bool = typer.Option(False, "--plan-only", help="stop after the Video JSON (no render)"),
+):
+    """Topic + template → short-form vertical MP4 (full pipeline)."""
     with _factory()() as s:
         svc = _service(s, progress=_progress)
         typer.echo("Creating project...")
@@ -96,8 +101,10 @@ def templates():
 
 
 @app.command()
-def batch(file: Path = typer.Argument(..., help="JSON list of {topic, template_id, target_duration?}"),
-          continue_on_error: bool = typer.Option(True)):
+def batch(
+    file: Path = typer.Argument(..., help="JSON list of {topic, template_id, target_duration?}"),
+    continue_on_error: bool = typer.Option(True),
+):
     """Generate many videos (PRD §51 30-video validation). Writes a review template per project."""
     items = json.loads(Path(file).read_text())
     ok = fail = 0
@@ -109,9 +116,24 @@ def batch(file: Path = typer.Argument(..., help="JSON list of {topic, template_i
                 p = svc.create_project(topic=it["topic"], template_id=it["template_id"], target_duration=it.get("target_duration"))
                 svc.generate(p.id)
                 review = svc.project_dir(p.id) / "review.json"
-                review.write_text(json.dumps({"project_id": p.id, "topic": it["topic"], "template": it["template_id"],
-                                              "script": None, "broll": None, "voice": None, "captions": None, "edit": None,
-                                              "would_post": None, "manual_changes": 0, "notes": ""}, indent=2))
+                review.write_text(
+                    json.dumps(
+                        {
+                            "project_id": p.id,
+                            "topic": it["topic"],
+                            "template": it["template_id"],
+                            "script": None,
+                            "broll": None,
+                            "voice": None,
+                            "captions": None,
+                            "edit": None,
+                            "would_post": None,
+                            "manual_changes": 0,
+                            "notes": "",
+                        },
+                        indent=2,
+                    )
+                )
                 typer.echo(f"   ✓ {svc.project_dir(p.id) / 'final.mp4'}")
                 ok += 1
             except Exception as exc:  # noqa: BLE001
@@ -129,7 +151,9 @@ def doctor():
 
     s = get_settings()
     typer.echo(f"llm_provider={s.llm_provider}  openai_key={'set' if s.openai_api_key else 'MISSING'}  model={s.openai_model}")
-    typer.echo(f"voice_provider={s.voice_provider}  elevenlabs_key={'set' if s.elevenlabs_api_key else 'MISSING'}  voice_id={'set' if s.elevenlabs_voice_id else 'MISSING'}")
+    typer.echo(
+        f"voice_provider={s.voice_provider}  elevenlabs_key={'set' if s.elevenlabs_api_key else 'MISSING'}  voice_id={'set' if s.elevenlabs_voice_id else 'MISSING'}"
+    )
     typer.echo(f"assets_dir={s.assets_dir} exists={s.assets_dir.is_dir()}  storage_dir={s.storage_dir}")
     typer.echo(f"database_url={s.database_url}")
     missing = check_render_capabilities()
@@ -137,6 +161,7 @@ def doctor():
 
 
 # ---------- assets ----------
+
 
 @assets_app.command("import")
 def assets_import(approve_unseeded: bool = typer.Option(False, help="approve new files that have no seed metadata")):
@@ -152,8 +177,9 @@ def assets_import(approve_unseeded: bool = typer.Option(False, help="approve new
 
 
 @assets_app.command("enrich")
-def assets_enrich(overwrite: bool = typer.Option(False, help="overwrite existing action/location/shot/mood"),
-                  only_unapproved: bool = typer.Option(False)):
+def assets_enrich(
+    overwrite: bool = typer.Option(False, help="overwrite existing action/location/shot/mood"), only_unapproved: bool = typer.Option(False)
+):
     """AI-assisted semantic metadata: richer tags/action/location/mood from clip descriptions (PRD §8)."""
     from app.assets.enrich import enrich_library
     from app.llm.base import get_llm
@@ -175,8 +201,10 @@ def assets_list(approved_only: bool = typer.Option(False)):
         if approved_only:
             q = q.where(Asset.approved.is_(True))
         for a in s.execute(q).scalars():
-            typer.echo(f"{a.id:<10} {a.file:<34} {a.duration:5.1f}s {a.width}x{a.height} {a.shot or '-':<7} {a.action or '-':<18} "
-                       f"q={a.quality_score:.2f} used={a.usage_count} {'✓' if a.approved else '✗'} tags={','.join(a.tags or [])}")
+            typer.echo(
+                f"{a.id:<10} {a.file:<34} {a.duration:5.1f}s {a.width}x{a.height} {a.shot or '-':<7} {a.action or '-':<18} "
+                f"q={a.quality_score:.2f} used={a.usage_count} {'✓' if a.approved else '✗'} tags={','.join(a.tags or [])}"
+            )
 
 
 @assets_app.command("search")
@@ -191,9 +219,16 @@ def assets_search(query: list[str] = typer.Argument(..., help="tags, e.g. typing
 
 
 @assets_app.command("set")
-def assets_set(asset_id: str, approved: Optional[bool] = None, quality: Optional[float] = None, mood: Optional[str] = None,
-               location: Optional[str] = None, action: Optional[str] = None, shot: Optional[str] = None,
-               tags: Optional[str] = typer.Option(None, help="comma separated")):
+def assets_set(
+    asset_id: str,
+    approved: bool | None = None,
+    quality: float | None = None,
+    mood: str | None = None,
+    location: str | None = None,
+    action: str | None = None,
+    shot: str | None = None,
+    tags: str | None = typer.Option(None, help="comma separated"),
+):
     """Edit semantic metadata of an asset."""
     from app.models import Asset
 
@@ -212,9 +247,13 @@ def assets_set(asset_id: str, approved: Optional[bool] = None, quality: Optional
 
 # ---------- projects ----------
 
+
 @projects_app.command("create")
-def projects_create(template: str = typer.Option(..., "--template", "-t"), topic: str = typer.Option(..., "--topic"),
-                    duration: Optional[float] = typer.Option(None, "--duration", "-d")):
+def projects_create(
+    template: str = typer.Option(..., "--template", "-t"),
+    topic: str = typer.Option(..., "--topic"),
+    duration: float | None = typer.Option(None, "--duration", "-d"),
+):
     with _factory()() as s:
         p = _service(s).create_project(topic=topic, template_id=template, target_duration=duration)
         typer.echo(p.id)
@@ -224,7 +263,9 @@ def projects_create(template: str = typer.Option(..., "--template", "-t"), topic
 def projects_list(limit: int = 30):
     with _factory()() as s:
         for p in _service(s).list_projects(limit):
-            typer.echo(f"{p.id:<17} {p.status:<18} {p.template_id:<20} s{p.script_version}/v{p.voice_version}/p{p.plan_version}/r{p.render_version}  {p.topic[:50]}")
+            typer.echo(
+                f"{p.id:<17} {p.status:<18} {p.template_id:<20} s{p.script_version}/v{p.voice_version}/p{p.plan_version}/r{p.render_version}  {p.topic[:50]}"
+            )
 
 
 @projects_app.command("show")
@@ -234,7 +275,9 @@ def projects_show(project_id: str):
         p = svc.get_project(project_id)
         typer.echo(f"{p.id}  status={p.status}  template={p.template_id}  persona={p.persona_id}")
         typer.echo(f"topic: {p.topic}")
-        typer.echo(f"target={p.target_duration}s actual={p.actual_duration}s versions: script={p.script_version} voice={p.voice_version} plan={p.plan_version} render={p.render_version}")
+        typer.echo(
+            f"target={p.target_duration}s actual={p.actual_duration}s versions: script={p.script_version} voice={p.voice_version} plan={p.plan_version} render={p.render_version}"
+        )
         if p.error:
             typer.echo(f"error: {p.error}")
         if p.script:
@@ -297,7 +340,9 @@ def projects_approve(project_id: str):
 def projects_suggest(project_id: str, scene: int):
     with _factory()() as s:
         for c in _service(s).suggest_assets(project_id, scene):
-            typer.echo(f"{c['asset_id']:<10} score={c['score']:.3f} {c.get('action')}/{c.get('location')}/{c.get('shot')}  {c.get('description')}")
+            typer.echo(
+                f"{c['asset_id']:<10} score={c['score']:.3f} {c.get('action')}/{c.get('location')}/{c.get('shot')}  {c.get('description')}"
+            )
 
 
 @projects_app.command("set-asset")

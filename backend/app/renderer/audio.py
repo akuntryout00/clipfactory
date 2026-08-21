@@ -1,9 +1,11 @@
 """Audio graph: voice loudness normalisation, optional music bed with ducking (PRD §18, §20)."""
+
 from __future__ import annotations
 
 
-def build_audio_graph(has_music: bool, voice_idx: int, music_idx: int | None, music_db: float = -20.0,
-                      total_duration: float = 0.0) -> tuple[str, str]:
+def build_audio_graph(
+    has_music: bool, voice_idx: int, music_idx: int | None, music_db: float = -20.0, total_duration: float = 0.0
+) -> tuple[str, str]:
     """Return (filter_complex_string, output_label) for the audio chain.
 
     voice → loudnorm → [v]

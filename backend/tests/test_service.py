@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from app.assets.importer import import_assets
 from app.llm.fake import FakeLLM
 from app.models import Asset, ProjectStatus, Render, VideoProject, VideoScene, VoiceGeneration
@@ -17,8 +16,9 @@ needs_libass = pytest.mark.skipif(not ffmpeg_has_filter("ass"), reason="local ff
 def svc(session, mini_assets, tmp_path):
     import_assets(session, mini_assets)
     storage = tmp_path / "storage"
-    return ProjectService(session, llm=FakeLLM(), voice=FakeVoice(), storage_dir=storage, assets_dir=mini_assets,
-                          render_preset="ultrafast", render_crf=30)
+    return ProjectService(
+        session, llm=FakeLLM(), voice=FakeVoice(), storage_dir=storage, assets_dir=mini_assets, render_preset="ultrafast", render_crf=30
+    )
 
 
 def test_create_project_defaults(svc):
@@ -56,6 +56,7 @@ def test_stages_up_to_plan_produce_versioned_artifacts(svc, session):
 def test_voice_is_master_clock_and_shortens_when_over_max(svc, session, monkeypatch):
     # make the fake voice slow so the first take exceeds max duration → shorten loop kicks in
     import app.voice.fake as fake_mod
+
     monkeypatch.setattr(fake_mod, "WORDS_PER_SECOND", 1.2)
     p = svc.create_project(topic="Stop taking meeting notes manually", template_id="story_v1", target_duration=20)
     svc.run_script(p.id)
@@ -70,6 +71,7 @@ def test_voice_is_master_clock_and_shortens_when_over_max(svc, session, monkeypa
 
 def test_voice_fails_after_two_rewrites(svc, session, monkeypatch):
     import app.voice.fake as fake_mod
+
     monkeypatch.setattr(fake_mod, "WORDS_PER_SECOND", 0.3)  # hopeless
     p = svc.create_project(topic="x", template_id="story_v1", target_duration=18)
     svc.run_script(p.id)
@@ -126,16 +128,22 @@ def test_generate_end_to_end_and_controls(svc, session):
 
 def test_render_failure_marks_failed_without_rerunning_llm(svc, session, monkeypatch):
     p = svc.create_project(topic="x", template_id="story_v1")
-    svc.run_script(p.id); svc.run_voice(p.id); svc.run_plan(p.id)
+    svc.run_script(p.id)
+    svc.run_voice(p.id)
+    svc.run_plan(p.id)
     calls = {"n": 0}
     real = svc.llm.generate_script
+
     def counting(**kw):
         calls["n"] += 1
         return real(**kw)
+
     monkeypatch.setattr(svc.llm, "generate_script", counting)
     import app.projects.service as svc_mod
+
     def boom(*a, **k):
         raise RuntimeError("ffmpeg exploded")
+
     monkeypatch.setattr(svc_mod, "render_video", boom)
     with pytest.raises(RuntimeError):
         svc.run_render(p.id)

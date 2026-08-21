@@ -1,10 +1,11 @@
 """Asset candidate search + scoring (relevance × quality × freshness) + segment choice."""
+
 from __future__ import annotations
 
 import random
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,9 +14,9 @@ from app.models import Asset
 
 # PRD §32 freshness table
 FRESHNESS_TABLE = [
-    (1.0, 0.20),   # used within last day
-    (3.0, 0.45),   # 1-3 days
-    (7.0, 0.70),   # 3-7 days
+    (1.0, 0.20),  # used within last day
+    (3.0, 0.45),  # 1-3 days
+    (7.0, 0.70),  # 3-7 days
     (float("inf"), 0.90),  # 7+ days
 ]
 
@@ -68,9 +69,9 @@ def extract_query_tags(raw: list[str]) -> list[str]:
 def freshness_multiplier(last_used_at: datetime | None, now: datetime | None = None) -> float:
     if last_used_at is None:
         return 1.0
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     if last_used_at.tzinfo is None:
-        last_used_at = last_used_at.replace(tzinfo=timezone.utc)
+        last_used_at = last_used_at.replace(tzinfo=UTC)
     days = (now - last_used_at).total_seconds() / 86400.0
     for limit, mult in FRESHNESS_TABLE:
         if days < limit:

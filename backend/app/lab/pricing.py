@@ -1,4 +1,5 @@
 """Rough cost estimates for the AI Lab (shown in the UI before generating). Numbers are list prices, not invoices."""
+
 from __future__ import annotations
 
 from app.config.settings import get_settings
@@ -20,10 +21,19 @@ def estimate_cost(provider_id: str, target_duration: float) -> dict:
     keyframes = n + 1
     image_cost = round(keyframes * per_image, 2)
     return {
-        "provider": provider_id, "label": meta["label"], "target_duration": target_duration,
-        "n_segments": n, "segment_seconds": seg, "video_seconds": video_seconds, "keyframes": keyframes,
-        "price_per_second": meta["price_per_second"], "video_cost": video_cost,
-        "image_cost": image_cost, "per_image": per_image, "image_quality": s.openai_image_quality,
-        "planner_cost": PLANNER_COST, "total": round(video_cost + image_cost + PLANNER_COST, 2),
+        "provider": provider_id,
+        "label": meta["label"],
+        "target_duration": target_duration,
+        "n_segments": n,
+        "segment_seconds": seg,
+        "video_seconds": video_seconds,
+        "keyframes": keyframes,
+        "price_per_second": meta["price_per_second"],
+        "video_cost": video_cost,
+        "image_cost": image_cost,
+        "per_image": per_image,
+        "image_quality": s.openai_image_quality,
+        "planner_cost": PLANNER_COST,
+        "total": round(video_cost + image_cost + PLANNER_COST, 2),
         "note": "list prices (fal/Google/OpenAI), excludes retries and re-dos",
     }

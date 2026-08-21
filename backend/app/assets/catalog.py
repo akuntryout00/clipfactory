@@ -1,4 +1,5 @@
 """Library-aware helpers: compact catalog summary for the planner and candidate sizing."""
+
 from __future__ import annotations
 
 from collections import Counter
@@ -37,5 +38,7 @@ def library_summary(session: Session, max_listing: int = SMALL_LIBRARY) -> str:
     if n <= max_listing:
         lines.append("Clips:")
         for a in assets:
-            lines.append(f"  {a.id}: {a.description or a.file} [{a.action or '-'} | {a.location or '-'} | {a.shot or '-'} | {a.duration:.1f}s]")
+            lines.append(
+                f"  {a.id}: {a.description or a.file} [{a.action or '-'} | {a.location or '-'} | {a.shot or '-'} | {a.duration:.1f}s]"
+            )
     return "\n".join(lines)

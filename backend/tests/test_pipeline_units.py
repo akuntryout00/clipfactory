@@ -1,32 +1,40 @@
-import json
-from pathlib import Path
-import random
-
 import pytest
-
-from app.schemas.pipeline import (
-    ScriptOutput, ScriptSection, WordTiming, VideoJSON, VideoJSONScene, ScenePlanOutput, PlannedScene,
+from app.config.loaders import load_persona, load_template
+from app.content.scene_planner import (
+    heuristic_plan,
+    normalize_plan,
+    section_word_ranges,
 )
 from app.content.script_generator import target_word_range, words_of
-from app.voice.alignment import chars_to_words
-from app.content.scene_planner import (
-    section_word_ranges, normalize_plan, heuristic_plan,
-)
-from app.config.loaders import load_template, load_persona
 from app.llm.fake import FakeLLM
-
+from app.schemas.pipeline import (
+    PlannedScene,
+    ScenePlanOutput,
+    ScriptOutput,
+    ScriptSection,
+    VideoJSON,
+    WordTiming,
+)
+from app.voice.alignment import chars_to_words
 
 # ---------- schemas ----------
 
+
 def test_video_json_rejects_non_contiguous_scenes():
     data = {
-        "version": "1.0", "persona": "p", "template": "story_v1", "topic": "t",
+        "version": "1.0",
+        "persona": "p",
+        "template": "story_v1",
+        "topic": "t",
         "voiceover": {"text": "hi", "audio": "v.mp3", "duration": 5.0},
         "scenes": [
             {"order": 1, "start": 0, "end": 2.0, "asset_id": "a", "asset_file": "a.mp4", "asset_start": 0.0, "text": None},
             {"order": 2, "start": 2.5, "end": 5.0, "asset_id": "b", "asset_file": "b.mp4", "asset_start": 0.0, "text": None},
         ],
-        "caption_style": "dynamic_center", "music": None, "captions": [], "seed": 1,
+        "caption_style": "dynamic_center",
+        "music": None,
+        "captions": [],
+        "seed": 1,
     }
     with pytest.raises(ValueError):
         VideoJSON.model_validate(data)
@@ -34,14 +42,19 @@ def test_video_json_rejects_non_contiguous_scenes():
 
 def test_video_json_accepts_valid_plan_and_roundtrips():
     data = {
-        "version": "1.0", "persona": "p", "template": "story_v1", "topic": "t",
+        "version": "1.0",
+        "persona": "p",
+        "template": "story_v1",
+        "topic": "t",
         "voiceover": {"text": "hi there", "audio": "v.mp3", "duration": 5.0},
         "scenes": [
             {"order": 1, "start": 0, "end": 2.0, "asset_id": "a", "asset_file": "a.mp4", "asset_start": 0.3, "text": "HI"},
             {"order": 2, "start": 2.0, "end": 5.0, "asset_id": "b", "asset_file": "b.mp4", "asset_start": 0.0, "text": None},
         ],
-        "caption_style": "dynamic_center", "music": None,
-        "captions": [{"start": 0.0, "end": 1.0, "text": "hi there", "emphasis_index": 1}], "seed": 1,
+        "caption_style": "dynamic_center",
+        "music": None,
+        "captions": [{"start": 0.0, "end": 1.0, "text": "hi there", "emphasis_index": 1}],
+        "seed": 1,
     }
     vj = VideoJSON.model_validate(data)
     assert vj.total_duration == 5.0
@@ -49,6 +62,7 @@ def test_video_json_accepts_valid_plan_and_roundtrips():
 
 
 # ---------- script ----------
+
 
 @pytest.mark.parametrize("dur,lo,hi", [(15, 33, 45), (20, 45, 60), (25, 58, 72)])
 def test_target_word_range_tracks_prd_table(dur, lo, hi):
@@ -58,10 +72,13 @@ def test_target_word_range_tracks_prd_table(dur, lo, hi):
 
 
 def test_script_full_text_joins_sections():
-    s = ScriptOutput(hook="Stop doing this.", sections=[
-        ScriptSection(type="hook", text="Stop doing this."),
-        ScriptSection(type="setup", text="You type notes, you miss things."),
-    ])
+    s = ScriptOutput(
+        hook="Stop doing this.",
+        sections=[
+            ScriptSection(type="hook", text="Stop doing this."),
+            ScriptSection(type="setup", text="You type notes, you miss things."),
+        ],
+    )
     assert s.full_text == "Stop doing this. You type notes, you miss things."
     assert words_of(s.full_text) == ["Stop", "doing", "this.", "You", "type", "notes,", "you", "miss", "things."]
 
@@ -88,6 +105,7 @@ def test_fake_llm_shorten_reduces_words():
 
 # ---------- alignment ----------
 
+
 def test_chars_to_words_groups_characters_into_words():
     text = "Stop it. Now go"
     chars = list(text)
@@ -101,6 +119,7 @@ def test_chars_to_words_groups_characters_into_words():
 
 
 # ---------- scene planner ----------
+
 
 def _words(text: str, wps: float = 2.5) -> list[WordTiming]:
     out, t = [], 0.0
@@ -120,12 +139,14 @@ def test_normalize_plan_snaps_to_word_times_and_is_contiguous():
     text = " ".join(f"w{i}" for i in range(40))  # 16 s at 2.5 wps
     words = _words(text)
     tpl = load_template("story_v1")
-    plan = ScenePlanOutput(scenes=[
-        PlannedScene(section="hook", first_word=0, last_word=4, intent="x", query_tags=["a"], overlay_text="HOOK"),
-        PlannedScene(section="setup", first_word=5, last_word=12, intent="y", query_tags=["b"], overlay_text=None),
-        PlannedScene(section="development", first_word=13, last_word=24, intent="z", query_tags=["c"], overlay_text=None),
-        PlannedScene(section="payoff", first_word=25, last_word=39, intent="q", query_tags=["d"], overlay_text="DONE"),
-    ])
+    plan = ScenePlanOutput(
+        scenes=[
+            PlannedScene(section="hook", first_word=0, last_word=4, intent="x", query_tags=["a"], overlay_text="HOOK"),
+            PlannedScene(section="setup", first_word=5, last_word=12, intent="y", query_tags=["b"], overlay_text=None),
+            PlannedScene(section="development", first_word=13, last_word=24, intent="z", query_tags=["c"], overlay_text=None),
+            PlannedScene(section="payoff", first_word=25, last_word=39, intent="q", query_tags=["d"], overlay_text="DONE"),
+        ]
+    )
     scenes = normalize_plan(plan, words, tpl, voice_duration=16.0)
     assert scenes[0].start == 0.0
     assert 16.0 <= scenes[-1].end <= 16.5  # small tail pad after the last word
@@ -140,12 +161,14 @@ def test_normalize_plan_snaps_to_word_times_and_is_contiguous():
 def test_normalize_plan_merges_too_short_scenes_and_limits_overlays():
     words = _words(" ".join(f"w{i}" for i in range(20)))  # 8 s
     tpl = load_template("story_v1")  # overlays max 3
-    plan = ScenePlanOutput(scenes=[
-        PlannedScene(section="hook", first_word=0, last_word=0, intent="x", query_tags=["a"], overlay_text="A"),   # 0.4 s
-        PlannedScene(section="setup", first_word=1, last_word=6, intent="y", query_tags=["b"], overlay_text="B"),
-        PlannedScene(section="development", first_word=7, last_word=12, intent="z", query_tags=["c"], overlay_text="C"),
-        PlannedScene(section="payoff", first_word=13, last_word=19, intent="q", query_tags=["d"], overlay_text="D"),
-    ])
+    plan = ScenePlanOutput(
+        scenes=[
+            PlannedScene(section="hook", first_word=0, last_word=0, intent="x", query_tags=["a"], overlay_text="A"),  # 0.4 s
+            PlannedScene(section="setup", first_word=1, last_word=6, intent="y", query_tags=["b"], overlay_text="B"),
+            PlannedScene(section="development", first_word=7, last_word=12, intent="z", query_tags=["c"], overlay_text="C"),
+            PlannedScene(section="payoff", first_word=13, last_word=19, intent="q", query_tags=["d"], overlay_text="D"),
+        ]
+    )
     scenes = normalize_plan(plan, words, tpl, voice_duration=8.0)
     assert all((s.end - s.start) >= tpl.shot_duration.min - 0.01 for s in scenes)
     assert sum(1 for s in scenes if s.overlay_text) <= 3
@@ -154,7 +177,12 @@ def test_normalize_plan_merges_too_short_scenes_and_limits_overlays():
 def test_heuristic_plan_produces_4_to_8_scenes_for_18s():
     words = _words(" ".join(f"w{i}." if i % 9 == 8 else f"w{i}" for i in range(45)))
     tpl = load_template("list_v1")
-    s = ScriptOutput(hook="h", sections=[ScriptSection(type=sec.type, text=" ".join(w.word for w in words[i*9:(i+1)*9])) for i, sec in enumerate(tpl.sections)])
+    s = ScriptOutput(
+        hook="h",
+        sections=[
+            ScriptSection(type=sec.type, text=" ".join(w.word for w in words[i * 9 : (i + 1) * 9])) for i, sec in enumerate(tpl.sections)
+        ],
+    )
     plan = heuristic_plan(s, words, tpl)
     scenes = normalize_plan(plan, words, tpl, voice_duration=18.0)
     assert 4 <= len(scenes) <= 8
@@ -175,11 +203,13 @@ def test_normalize_plan_short_scene_merge_does_not_create_overlong_scene():
     # 2.5 wps → each word 0.4 s. scene A = 10 words (4.0 s), B = 3 words (1.2 s, too short), C = 8 words (3.2 s)
     words = _words(" ".join(f"w{i}" for i in range(21)))
     tpl = load_template("story_v1")  # shots 1.5–4.0 s
-    plan = ScenePlanOutput(scenes=[
-        PlannedScene(section="setup", first_word=0, last_word=9, intent="a", query_tags=["a"]),
-        PlannedScene(section="development", first_word=10, last_word=12, intent="b", query_tags=["b"]),
-        PlannedScene(section="development", first_word=13, last_word=20, intent="c", query_tags=["c"]),
-    ])
+    plan = ScenePlanOutput(
+        scenes=[
+            PlannedScene(section="setup", first_word=0, last_word=9, intent="a", query_tags=["a"]),
+            PlannedScene(section="development", first_word=10, last_word=12, intent="b", query_tags=["b"]),
+            PlannedScene(section="development", first_word=13, last_word=20, intent="c", query_tags=["c"]),
+        ]
+    )
     scenes = normalize_plan(plan, words, tpl, voice_duration=words[-1].end)
     for s in scenes:
         assert tpl.shot_duration.min - 0.01 <= s.duration <= tpl.shot_duration.max * 1.2 + 0.01, [(x.start, x.end) for x in scenes]

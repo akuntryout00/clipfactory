@@ -1,4 +1,5 @@
 """Caption chunking (2–5 words, sync with voice) + ASS subtitle writer with TikTok safe zones (PRD §15, §36, §37)."""
+
 from __future__ import annotations
 
 import re
@@ -7,8 +8,38 @@ from pathlib import Path
 from app.schemas.configs import CaptionStyleConfig
 from app.schemas.pipeline import CaptionChunk, WordTiming
 
-_STOPWORDS = {"the", "a", "an", "and", "or", "but", "to", "of", "in", "on", "at", "for", "is", "it", "you", "your",
-              "this", "that", "with", "then", "like", "just", "are", "was", "be", "do", "did", "not", "its", "it's"}
+_STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "to",
+    "of",
+    "in",
+    "on",
+    "at",
+    "for",
+    "is",
+    "it",
+    "you",
+    "your",
+    "this",
+    "that",
+    "with",
+    "then",
+    "like",
+    "just",
+    "are",
+    "was",
+    "be",
+    "do",
+    "did",
+    "not",
+    "its",
+    "it's",
+}
 
 
 def _ends_clause(word: str) -> bool:
@@ -60,14 +91,18 @@ def build_caption_chunks(words: list[WordTiming], style: CaptionStyleConfig) -> 
 def _emphasis(buf: list[WordTiming]) -> int | None:
     if len(buf) < 2:
         return None
-    cands = [(len(re.sub(r"[^A-Za-z0-9]", "", w.word)), i) for i, w in enumerate(buf)
-             if re.sub(r"[^A-Za-z0-9]", "", w.word).lower() not in _STOPWORDS]
+    cands = [
+        (len(re.sub(r"[^A-Za-z0-9]", "", w.word)), i)
+        for i, w in enumerate(buf)
+        if re.sub(r"[^A-Za-z0-9]", "", w.word).lower() not in _STOPWORDS
+    ]
     if not cands:
         return None
     return max(cands)[1]
 
 
 # ---------- ASS writer ----------
+
 
 def _ts(t: float) -> str:
     t = max(0.0, t)
@@ -92,7 +127,7 @@ def _wrap_words(words: list[str], max_chars: int, max_lines: int) -> list[list[i
     if cur:
         lines.append(cur)
     if len(lines) > max_lines:  # squeeze: merge remainder into the last allowed line
-        lines = lines[:max_lines - 1] + [[i for line in lines[max_lines - 1:] for i in line]]
+        lines = lines[: max_lines - 1] + [[i for line in lines[max_lines - 1 :] for i in line]]
     return lines
 
 
@@ -105,8 +140,14 @@ def _esc(text: str) -> str:
     return text.replace("{", "(").replace("}", ")")
 
 
-def write_ass(chunks: list[CaptionChunk], overlays: list[tuple[float, float, str]], style: CaptionStyleConfig,
-              out_path: Path, width: int = 1080, height: int = 1920) -> Path:
+def write_ass(
+    chunks: list[CaptionChunk],
+    overlays: list[tuple[float, float, str]],
+    style: CaptionStyleConfig,
+    out_path: Path,
+    width: int = 1080,
+    height: int = 1920,
+) -> Path:
     sz = style.safe_zone
     margin_l = int(width * sz.left)
     margin_r = int(width * sz.right)

@@ -1,13 +1,14 @@
 """Project orchestration: staged pipeline, versioned artifacts, regeneration controls (PRD §29, §43–45)."""
+
 from __future__ import annotations
 
 import json
 import logging
 import random
 import shutil
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,10 +19,18 @@ from app.config.loaders import list_templates, load_caption_style, load_persona,
 from app.config.settings import get_settings
 from app.content.asset_assignment import assign_assets
 from app.content.scene_planner import heuristic_plan, normalize_plan
-from app.content.script_generator import generate_script, shorten_script, target_word_range, words_of
+from app.content.script_generator import generate_script, shorten_script, words_of
 from app.llm.base import LLMProvider, get_llm
 from app.models import (
-    Asset, AssetUsage, ProjectEvent, ProjectStatus, Render, VideoProject, VideoScene, VoiceGeneration, utcnow,
+    Asset,
+    AssetUsage,
+    ProjectEvent,
+    ProjectStatus,
+    Render,
+    VideoProject,
+    VideoScene,
+    VoiceGeneration,
+    utcnow,
 )
 from app.renderer.ffmpeg import RenderOptions, render_video
 from app.renderer.qc import run_qc
@@ -38,9 +47,18 @@ ProgressFn = Callable[[str, str], None]
 
 
 class ProjectService:
-    def __init__(self, session: Session, llm: LLMProvider | None = None, voice: VoiceProvider | None = None,
-                 storage_dir: Path | None = None, assets_dir: Path | None = None, progress: ProgressFn | None = None,
-                 render_preset: str | None = None, render_crf: int | None = None, configs_dir: Path | None = None):
+    def __init__(
+        self,
+        session: Session,
+        llm: LLMProvider | None = None,
+        voice: VoiceProvider | None = None,
+        storage_dir: Path | None = None,
+        assets_dir: Path | None = None,
+        progress: ProgressFn | None = None,
+        render_preset: str | None = None,
+        render_crf: int | None = None,
+        configs_dir: Path | None = None,
+    ):
         s = get_settings()
         self.session = session
         self.configs_dir = Path(configs_dir) if configs_dir else None
@@ -115,7 +133,9 @@ class ProjectService:
 
     # ---------- project CRUD ----------
 
-    def create_project(self, topic: str, template_id: str, persona_id: str | None = None, target_duration: float | None = None) -> VideoProject:
+    def create_project(
+        self, topic: str, template_id: str, persona_id: str | None = None, target_duration: float | None = None
+    ) -> VideoProject:
         persona = load_persona(persona_id or get_settings().default_persona, self.configs_dir)
         template = load_template(template_id, self.configs_dir)  # raises FileNotFoundError if unknown
         td = float(target_duration if target_duration is not None else persona.target_duration or template.duration.target)
@@ -154,7 +174,9 @@ class ProjectService:
         p.script_version += 1
         p.script = script.full_text
         (self.project_dir(p.id) / f"script_v{p.script_version}.json").write_text(script.model_dump_json(indent=2))
-        self.session.add(ProjectEvent(project_id=p.id, stage="SCRIPT", message=f"script v{p.script_version}: {len(words_of(script.full_text))} words"))
+        self.session.add(
+            ProjectEvent(project_id=p.id, stage="SCRIPT", message=f"script v{p.script_version}: {len(words_of(script.full_text))} words")
+        )
         self.session.commit()
 
     def run_voice(self, project_id: str) -> VoiceResult:
@@ -174,8 +196,15 @@ class ProjectService:
                 res = self.voice.synthesize(text=script.for_speech().full_text, voice=persona.voice, out_path=out)
                 p.voice_version = version
                 (self.project_dir(p.id) / f"voice_v{version}.words.json").write_text(json.dumps([w.model_dump() for w in res.words]))
-                vg = VoiceGeneration(project_id=p.id, version=version, script_version=p.script_version, provider=res.provider,
-                                     audio_path=res.audio_path, alignment_path=res.alignment_path, duration=res.duration)
+                vg = VoiceGeneration(
+                    project_id=p.id,
+                    version=version,
+                    script_version=p.script_version,
+                    provider=res.provider,
+                    audio_path=res.audio_path,
+                    alignment_path=res.alignment_path,
+                    duration=res.duration,
+                )
                 self.session.add(vg)
                 p.actual_duration = res.duration
                 self.session.add(ProjectEvent(project_id=p.id, stage="VOICE", message=f"voice v{version}: {res.duration:.2f}s"))
@@ -188,15 +217,26 @@ class ProjectService:
                 rewrites += 1
                 ratio = max_dur / res.duration
                 target_words = max(12, int(len(words_of(script.full_text)) * ratio * 0.92))
-                self.progress("VOICE", f"Voice too long ({res.duration:.1f}s > {max_dur:.0f}s) — shortening script to ~{target_words} words")
-                script = shorten_script(self.llm, persona, template, script, target_words, reason=f"{res.duration:.1f}s audio > {max_dur:.0f}s max")
+                self.progress(
+                    "VOICE", f"Voice too long ({res.duration:.1f}s > {max_dur:.0f}s) — shortening script to ~{target_words} words"
+                )
+                script = shorten_script(
+                    self.llm, persona, template, script, target_words, reason=f"{res.duration:.1f}s audio > {max_dur:.0f}s max"
+                )
                 self._save_script(p, script)
         except Exception as exc:  # noqa: BLE001
             self._fail(p, "voice", exc)
             raise
 
-    def run_plan(self, project_id: str, *, exclude_asset_ids: set[str] | None = None, seed: int | None = None,
-                 fixed_assets: dict[int, str] | None = None, reuse_scenes: bool = False) -> VideoJSON:
+    def run_plan(
+        self,
+        project_id: str,
+        *,
+        exclude_asset_ids: set[str] | None = None,
+        seed: int | None = None,
+        fixed_assets: dict[int, str] | None = None,
+        reuse_scenes: bool = False,
+    ) -> VideoJSON:
         """Scene planning + asset selection + captions → validated Video JSON (plan_vN.json)."""
         p = self._get(project_id)
         persona, template = self._configs(p)
@@ -212,11 +252,20 @@ class ProjectService:
                 scenes = self._scenes_from_plan(p.id, p.plan_version, self.load_plan(p.id, p.plan_version), words)
             if scenes is None:
                 try:
-                    raw = self.llm.plan_scenes(persona=persona, template=template, topic=p.topic, script=script, words=words,
-                                               voice_duration=vg.duration, library=library_summary(self.session))
+                    raw = self.llm.plan_scenes(
+                        persona=persona,
+                        template=template,
+                        topic=p.topic,
+                        script=script,
+                        words=words,
+                        voice_duration=vg.duration,
+                        library=library_summary(self.session),
+                    )
                 except Exception as exc:  # noqa: BLE001 — heuristic fallback keeps the pipeline alive
                     log.warning("LLM scene planning failed (%s); using heuristic planner", exc)
-                    self.session.add(ProjectEvent(project_id=p.id, stage="PLANNING", level="warning", message=f"LLM plan failed, heuristic used: {exc}"))
+                    self.session.add(
+                        ProjectEvent(project_id=p.id, stage="PLANNING", level="warning", message=f"LLM plan failed, heuristic used: {exc}")
+                    )
                     raw = heuristic_plan(script, words, template)
                 scenes = normalize_plan(raw, words, template, vg.duration)
             self.progress("PLANNING", f"{len(scenes)} scenes planned.")
@@ -224,18 +273,48 @@ class ProjectService:
             style = load_caption_style(template.caption_style, self.configs_dir)
             new_seed = seed if seed is not None else random.randint(1, 2**31 - 1)
             music = self._pick_music(template, persona)
-            video = assign_assets(session=self.session, llm=self.llm, persona=persona, template=template, topic=p.topic,
-                                  scenes=scenes, words=words, voice_audio=Path(vg.audio_path).name, voice_duration=vg.duration,
-                                  caption_style=style, seed=new_seed, exclude_asset_ids=exclude_asset_ids,
-                                  fixed_assets=fixed_assets, music=music)
+            video = assign_assets(
+                session=self.session,
+                llm=self.llm,
+                persona=persona,
+                template=template,
+                topic=p.topic,
+                scenes=scenes,
+                words=words,
+                voice_audio=Path(vg.audio_path).name,
+                voice_duration=vg.duration,
+                caption_style=style,
+                seed=new_seed,
+                exclude_asset_ids=exclude_asset_ids,
+                fixed_assets=fixed_assets,
+                music=music,
+            )
             self._set_status(p, ProjectStatus.GENERATING_CAPTIONS, "Generating captions...")
             p.plan_version += 1
             (self.project_dir(p.id) / f"plan_v{p.plan_version}.json").write_text(video.model_dump_json(indent=2))
             for sc, ns in zip(video.scenes, scenes):
-                self.session.add(VideoScene(project_id=p.id, plan_version=p.plan_version, order=sc.order, asset_id=sc.asset_id,
-                                            start_time=sc.start, end_time=sc.end, asset_start_time=sc.asset_start,
-                                            overlay_text=sc.text, section=sc.section, intent=ns.intent, query_tags=ns.query_tags))
-            self.session.add(ProjectEvent(project_id=p.id, stage="PLAN", message=f"plan v{p.plan_version}: {len(video.scenes)} scenes, assets {[s.asset_id for s in video.scenes]}"))
+                self.session.add(
+                    VideoScene(
+                        project_id=p.id,
+                        plan_version=p.plan_version,
+                        order=sc.order,
+                        asset_id=sc.asset_id,
+                        start_time=sc.start,
+                        end_time=sc.end,
+                        asset_start_time=sc.asset_start,
+                        overlay_text=sc.text,
+                        section=sc.section,
+                        intent=ns.intent,
+                        query_tags=ns.query_tags,
+                    )
+                )
+            self.session.add(
+                ProjectEvent(
+                    project_id=p.id,
+                    stage="PLAN",
+                    message=f"plan v{p.plan_version}: {len(video.scenes)} scenes, assets {[s.asset_id for s in video.scenes]}",
+                )
+            )
             self.session.commit()
             self.progress("ASSETS", "Assets selected: " + ", ".join(s.asset_id for s in video.scenes))
             return video
@@ -252,7 +331,9 @@ class ProjectService:
         video = self.load_plan(p.id, p.plan_version)
         vg = self._voice_row(p)
         version = p.render_version + 1
-        r = Render(project_id=p.id, version=version, plan_version=p.plan_version, voice_version=p.voice_version, seed=video.seed, status="RUNNING")
+        r = Render(
+            project_id=p.id, version=version, plan_version=p.plan_version, voice_version=p.voice_version, seed=video.seed, status="RUNNING"
+        )
         self.session.add(r)
         self.session.commit()
         out = self.renders_dir(p.id) / f"render_v{version}.mp4"
@@ -260,8 +341,16 @@ class ProjectService:
         try:
             style = load_caption_style(template.caption_style, self.configs_dir)
             music_path = (self.storage_dir / "music" / video.music) if video.music else None
-            render_video(video, assets_dir=self.assets_dir, voice_path=Path(vg.audio_path), out_path=out, style=style,
-                         work_dir=work, music_path=music_path, options=self.render_options)
+            render_video(
+                video,
+                assets_dir=self.assets_dir,
+                voice_path=Path(vg.audio_path),
+                out_path=out,
+                style=style,
+                work_dir=work,
+                music_path=music_path,
+                options=self.render_options,
+            )
             qc = run_qc(out, expected_duration=video.total_duration)
             r.qc = qc
             r.output_path = str(out)
@@ -336,16 +425,24 @@ class ProjectService:
         p = self._get(project_id)
         if p.status != ProjectStatus.READY.value:
             raise RuntimeError(f"only READY projects can be approved (status={p.status})")
-        p.approved_at = datetime.now(timezone.utc)
+        p.approved_at = datetime.now(UTC)
         self._set_status(p, ProjectStatus.APPROVED, "Approved")
         return p
 
     def suggest_assets(self, project_id: str, scene_order: int, limit: int = 8) -> list[dict]:
         p = self._get(project_id)
-        sc = self.session.execute(select(VideoScene).where(VideoScene.project_id == p.id, VideoScene.plan_version == p.plan_version,
-                                                           VideoScene.order == scene_order)).scalar_one()
+        sc = self.session.execute(
+            select(VideoScene).where(
+                VideoScene.project_id == p.id, VideoScene.plan_version == p.plan_version, VideoScene.order == scene_order
+            )
+        ).scalar_one()
         tags = extract_query_tags(list(sc.query_tags or []) + [sc.intent or ""])
-        current = {s.asset_id for s in self.session.execute(select(VideoScene).where(VideoScene.project_id == p.id, VideoScene.plan_version == p.plan_version)).scalars()}
+        current = {
+            s.asset_id
+            for s in self.session.execute(
+                select(VideoScene).where(VideoScene.project_id == p.id, VideoScene.plan_version == p.plan_version)
+            ).scalars()
+        }
         cands = find_candidates(self.session, tags, limit=limit, exclude_ids=current, min_relevance=-1.0)
         return [c.as_dict() for c in cands]
 
@@ -365,20 +462,36 @@ class ProjectService:
     # ---------- internals ----------
 
     def _voice_row(self, p: VideoProject) -> VoiceGeneration:
-        return self.session.execute(select(VoiceGeneration).where(VoiceGeneration.project_id == p.id, VoiceGeneration.version == p.voice_version)).scalar_one()
+        return self.session.execute(
+            select(VoiceGeneration).where(VoiceGeneration.project_id == p.id, VoiceGeneration.version == p.voice_version)
+        ).scalar_one()
 
     def _scenes_from_plan(self, project_id: str, plan_version: int, plan: VideoJSON, words: list[WordTiming]) -> list[NormalizedScene]:
         """Rebuild NormalizedScene objects (timings + intent/tags) from a stored plan so re-plans keep the same cut."""
-        rows = {r.order: r for r in self.session.execute(select(VideoScene).where(
-            VideoScene.project_id == project_id, VideoScene.plan_version == plan_version)).scalars()}
+        rows = {
+            r.order: r
+            for r in self.session.execute(
+                select(VideoScene).where(VideoScene.project_id == project_id, VideoScene.plan_version == plan_version)
+            ).scalars()
+        }
         scenes = []
         for s in plan.scenes:
             first = next((i for i, w in enumerate(words) if w.start >= s.start - 1e-6), 0)
             last = max(first, next((i for i in range(len(words) - 1, -1, -1) if words[i].end <= s.end + 1e-6), first))
             db = rows.get(s.order)
-            scenes.append(NormalizedScene(order=s.order, section=s.section or "", start=s.start, end=s.end, first_word=first,
-                                          last_word=last, intent=(db.intent if db and db.intent else s.section or ""),
-                                          query_tags=list(db.query_tags) if db and db.query_tags else ["desk"], overlay_text=s.text))
+            scenes.append(
+                NormalizedScene(
+                    order=s.order,
+                    section=s.section or "",
+                    start=s.start,
+                    end=s.end,
+                    first_word=first,
+                    last_word=last,
+                    intent=(db.intent if db and db.intent else s.section or ""),
+                    query_tags=list(db.query_tags) if db and db.query_tags else ["desk"],
+                    overlay_text=s.text,
+                )
+            )
         return scenes
 
     def _pick_music(self, template: TemplateConfig, persona: PersonaConfig) -> str | None:
@@ -393,7 +506,7 @@ class ProjectService:
         return random.choice(pool)
 
     def _record_usage(self, p: VideoProject, video: VideoJSON, r: Render) -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for s in video.scenes:
             a = self.session.get(Asset, s.asset_id)
             if a is None:

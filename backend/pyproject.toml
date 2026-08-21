@@ -1,7 +1,10 @@
 [project]
-name = "tiktok-content-factory"
+name = "clipfactory"
 version = "0.1.0"
-description = "TikTok Content Factory MVP — topic + template -> TikTok-ready MP4 from own B-roll"
+description = "ClipFactory — topic + template -> short-form vertical MP4 (TikTok/Reels/Shorts) from your own B-roll, plus an AI Lab for fully generated clips"
+license = { text = "Elastic-2.0" }
+authors = [{ name = "ClipFactory contributors" }]
+keywords = ["video", "tiktok", "shorts", "reels", "ffmpeg", "ai", "elevenlabs", "openai"]
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115,<1",
@@ -20,10 +23,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<9", "pytest-asyncio>=0.23"]
+dev = ["pytest>=8,<9", "pytest-asyncio>=0.23", "ruff>=0.6"]
 
 [project.scripts]
-ttcf = "app.cli:app"
+clipfactory = "app.cli:app"
+ttcf = "app.cli:app"  # legacy alias
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -35,3 +39,15 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 140
+target-version = "py311"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+ignore = ["E501", "B008", "B904", "B905", "SIM102", "SIM108", "UP007", "UP042"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011", "E731", "SIM117", "E702", "E741"]

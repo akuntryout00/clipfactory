@@ -1,4 +1,5 @@
 """Script generation with word-count targets and duration control (PRD §13, §39)."""
+
 from __future__ import annotations
 
 import re
@@ -29,8 +30,12 @@ def generate_script(llm: LLMProvider, persona: PersonaConfig, template: Template
     return _sanitize(script, template)
 
 
-def shorten_script(llm: LLMProvider, persona: PersonaConfig, template: TemplateConfig, script: ScriptOutput, target_words: int, reason: str) -> ScriptOutput:
-    return _sanitize(llm.shorten_script(persona=persona, template=template, script=script, target_words=target_words, reason=reason), template)
+def shorten_script(
+    llm: LLMProvider, persona: PersonaConfig, template: TemplateConfig, script: ScriptOutput, target_words: int, reason: str
+) -> ScriptOutput:
+    return _sanitize(
+        llm.shorten_script(persona=persona, template=template, script=script, target_words=target_words, reason=reason), template
+    )
 
 
 def _sanitize(script: ScriptOutput, template: TemplateConfig) -> ScriptOutput:

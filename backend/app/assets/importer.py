@@ -1,4 +1,5 @@
 """Scan the asset folder, extract ffprobe metadata, seed semantic metadata."""
+
 from __future__ import annotations
 
 import json
@@ -130,11 +131,22 @@ def import_assets(session: Session, assets_dir: Path, approve_unseeded: bool = F
     return report
 
 
-def register_asset_file(session: Session, assets_dir: Path, rel: str, *, description: str | None = None,
-                        tags: list[str] | None = None, approved: bool = False, quality_score: float = 0.8,
-                        usable_start: float | None = None, usable_end: float | None = None,
-                        action: str | None = None, location: str | None = None, shot: str | None = None,
-                        mood: str | None = None) -> Asset:
+def register_asset_file(
+    session: Session,
+    assets_dir: Path,
+    rel: str,
+    *,
+    description: str | None = None,
+    tags: list[str] | None = None,
+    approved: bool = False,
+    quality_score: float = 0.8,
+    usable_start: float | None = None,
+    usable_end: float | None = None,
+    action: str | None = None,
+    location: str | None = None,
+    shot: str | None = None,
+    mood: str | None = None,
+) -> Asset:
     """Create one Asset row for a file already placed under assets_dir (used by single-file upload)."""
     meta = probe_video(assets_dir / rel)
     tags = [t.strip().lower() for t in (tags or []) if t.strip()]
@@ -143,11 +155,24 @@ def register_asset_file(session: Session, assets_dir: Path, rel: str, *, descrip
     us = round(margin, 2) if usable_start is None else round(min(max(0.0, usable_start), meta.duration), 2)
     ue = round(max(meta.duration - margin, margin), 2) if usable_end is None else round(min(max(usable_end, us + 0.1), meta.duration), 2)
     asset = Asset(
-        id=_next_asset_id(session, set()), file=rel, description=description, tags=tags,
-        action=action or sem["action"], location=location or sem["location"], mood=mood or sem["mood"], shot=shot or None,
-        duration=round(meta.duration, 3), width=meta.width, height=meta.height, fps=round(meta.fps, 3),
-        orientation=meta.orientation, codec=meta.codec, usable_start=us, usable_end=ue,
-        quality_score=quality_score, approved=approved,
+        id=_next_asset_id(session, set()),
+        file=rel,
+        description=description,
+        tags=tags,
+        action=action or sem["action"],
+        location=location or sem["location"],
+        mood=mood or sem["mood"],
+        shot=shot or None,
+        duration=round(meta.duration, 3),
+        width=meta.width,
+        height=meta.height,
+        fps=round(meta.fps, 3),
+        orientation=meta.orientation,
+        codec=meta.codec,
+        usable_start=us,
+        usable_end=ue,
+        quality_score=quality_score,
+        approved=approved,
     )
     session.add(asset)
     session.commit()

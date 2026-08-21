@@ -1,4 +1,5 @@
 """AI-assisted semantic metadata enrichment from clip descriptions (PRD §8)."""
+
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -11,8 +12,9 @@ from app.schemas.pipeline import AssetEnrichOutput
 _DEFAULT_MOODS = {None, "", "neutral"}
 
 
-def enrich_library(session: Session, llm: LLMProvider, overwrite: bool = False, only_unapproved: bool = False,
-                   asset_ids: list[str] | None = None) -> int:
+def enrich_library(
+    session: Session, llm: LLMProvider, overwrite: bool = False, only_unapproved: bool = False, asset_ids: list[str] | None = None
+) -> int:
     q = select(Asset).order_by(Asset.id)
     if only_unapproved:
         q = q.where(Asset.approved.is_(False))
@@ -21,8 +23,18 @@ def enrich_library(session: Session, llm: LLMProvider, overwrite: bool = False, 
     rows = list(session.execute(q).scalars())
     if not rows:
         return 0
-    payload = [{"asset_id": a.id, "file": a.file, "description": a.description or "", "tags": list(a.tags or []),
-                "action": a.action, "location": a.location, "shot": a.shot} for a in rows]
+    payload = [
+        {
+            "asset_id": a.id,
+            "file": a.file,
+            "description": a.description or "",
+            "tags": list(a.tags or []),
+            "action": a.action,
+            "location": a.location,
+            "shot": a.shot,
+        }
+        for a in rows
+    ]
     out = llm.enrich_assets(assets=payload)
     return apply_enrichment(session, out, overwrite=overwrite)
 

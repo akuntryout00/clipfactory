@@ -1,4 +1,5 @@
 """Character-level alignment → word timings."""
+
 from __future__ import annotations
 
 from app.schemas.pipeline import WordTiming

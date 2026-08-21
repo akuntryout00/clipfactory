@@ -1,4 +1,5 @@
 """Application settings (12-factor, .env driven)."""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -29,17 +30,17 @@ class Settings(BaseSettings):
     # AI Lab (isolated module): OpenAI images + Google video
     openai_image_model: str = "gpt-image-2"
     openai_image_size: str = "1024x1536"
-    openai_image_quality: str = "low"      # low | medium | high — high ≈ 100 s per image, medium ≈ 40 s, low ≈ 20 s
+    openai_image_quality: str = "low"  # low | medium | high — high ≈ 100 s per image, medium ≈ 40 s, low ≈ 20 s
     openai_image_input_fidelity: str = "high"  # edit endpoint: how closely the reference frame is preserved
     google_api_key: str | None = None
     google_video_model: str = "gemini-omni-flash-preview"  # Omni (Interactions API), up to ~10 s per clip
     google_veo_model: str = "veo-3.1-fast-generate-preview"  # alternative provider with true first/last-frame interpolation
     google_person_generation: str = "allow_adult"  # Veo filters people from image inputs otherwise
     fal_key: str | None = None
-    lab_fal_model: str = "minimax-h3"    # default model when provider is plain "fal"
-    lab_planner: str = "openai"          # openai | fake
-    lab_image_provider: str = "openai"   # openai | fake
-    lab_video_provider: str = "omni"     # omni | veo | fake
+    lab_fal_model: str = "minimax-h3"  # default model when provider is plain "fal"
+    lab_planner: str = "openai"  # openai | fake
+    lab_image_provider: str = "openai"  # openai | fake
+    lab_video_provider: str = "omni"  # omni | veo | fake
 
     # storage
     database_url: str = f"sqlite:///{REPO_DIR / 'storage' / 'ttcf.db'}"

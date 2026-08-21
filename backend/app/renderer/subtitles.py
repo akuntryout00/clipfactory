@@ -1,4 +1,5 @@
 """Subtitle/overlay sidecar generation for the renderer."""
+
 from __future__ import annotations
 
 from pathlib import Path

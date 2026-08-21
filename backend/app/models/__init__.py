@@ -1,9 +1,10 @@
 """SQLAlchemy ORM models."""
+
 from __future__ import annotations
 
 import enum
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -12,7 +13,7 @@ from app.db import Base
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def new_id(prefix: str) -> str:
@@ -112,10 +113,10 @@ class VideoProject(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    scenes: Mapped[list["VideoScene"]] = relationship(back_populates="project", cascade="all, delete-orphan")
-    voices: Mapped[list["VoiceGeneration"]] = relationship(back_populates="project", cascade="all, delete-orphan")
-    renders: Mapped[list["Render"]] = relationship(back_populates="project", cascade="all, delete-orphan")
-    events: Mapped[list["ProjectEvent"]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    scenes: Mapped[list[VideoScene]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    voices: Mapped[list[VoiceGeneration]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    renders: Mapped[list[Render]] = relationship(back_populates="project", cascade="all, delete-orphan")
+    events: Mapped[list[ProjectEvent]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
 class VideoScene(Base):

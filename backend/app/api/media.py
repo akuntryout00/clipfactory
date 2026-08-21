@@ -1,4 +1,5 @@
 """Media helpers for the UI: range-aware file responses and cached thumbnails."""
+
 from __future__ import annotations
 
 import mimetypes
@@ -54,8 +55,23 @@ def thumbnail_for(video: Path, cache_dir: Path, key: str, at: float = 1.0, width
     out = cache_dir / f"{key}.jpg"
     if out.is_file() and out.stat().st_mtime >= video.stat().st_mtime:
         return out
-    cmd = [get_settings().ffmpeg_bin, "-y", "-loglevel", "error", "-ss", f"{at:.2f}", "-i", str(video), "-frames:v", "1",
-           "-vf", f"scale={width}:-2", "-q:v", "4", str(out)]
+    cmd = [
+        get_settings().ffmpeg_bin,
+        "-y",
+        "-loglevel",
+        "error",
+        "-ss",
+        f"{at:.2f}",
+        "-i",
+        str(video),
+        "-frames:v",
+        "1",
+        "-vf",
+        f"scale={width}:-2",
+        "-q:v",
+        "4",
+        str(out),
+    ]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0 or not out.is_file():
         # fall back to first frame

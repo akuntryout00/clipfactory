@@ -1,4 +1,5 @@
 """Load and validate JSON configs (personas, templates, caption styles)."""
+
 from __future__ import annotations
 
 import json

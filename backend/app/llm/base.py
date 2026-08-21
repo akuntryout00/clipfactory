@@ -1,10 +1,19 @@
 """LLM provider abstraction (PRD §27): business logic never talks to a vendor SDK directly."""
+
 from __future__ import annotations
 
 from typing import Protocol
 
 from app.schemas.configs import PersonaConfig, TemplateConfig
-from app.schemas.pipeline import AssetEnrichOutput, AssetRankOutput, ClipAnalysis, NormalizedScene, ScenePlanOutput, ScriptOutput, WordTiming
+from app.schemas.pipeline import (
+    AssetEnrichOutput,
+    AssetRankOutput,
+    ClipAnalysis,
+    NormalizedScene,
+    ScenePlanOutput,
+    ScriptOutput,
+    WordTiming,
+)
 
 
 class LLMProvider(Protocol):
@@ -12,9 +21,21 @@ class LLMProvider(Protocol):
 
     def generate_script(self, *, persona: PersonaConfig, template: TemplateConfig, topic: str, target_duration: float) -> ScriptOutput: ...
 
-    def shorten_script(self, *, persona: PersonaConfig, template: TemplateConfig, script: ScriptOutput, target_words: int, reason: str) -> ScriptOutput: ...
+    def shorten_script(
+        self, *, persona: PersonaConfig, template: TemplateConfig, script: ScriptOutput, target_words: int, reason: str
+    ) -> ScriptOutput: ...
 
-    def plan_scenes(self, *, persona: PersonaConfig, template: TemplateConfig, topic: str, script: ScriptOutput, words: list[WordTiming], voice_duration: float, library: str | None = None) -> ScenePlanOutput: ...
+    def plan_scenes(
+        self,
+        *,
+        persona: PersonaConfig,
+        template: TemplateConfig,
+        topic: str,
+        script: ScriptOutput,
+        words: list[WordTiming],
+        voice_duration: float,
+        library: str | None = None,
+    ) -> ScenePlanOutput: ...
 
     def enrich_assets(self, *, assets: list[dict]) -> AssetEnrichOutput: ...
 

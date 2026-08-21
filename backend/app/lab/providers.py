@@ -1,4 +1,5 @@
 """AI Lab providers: keyframe planner (LLM), image generation (OpenAI), video interpolation (Google). Fakes for tests."""
+
 from __future__ import annotations
 
 import base64
@@ -17,12 +18,13 @@ W, H = 1080, 1920
 
 # ---------------- planner ----------------
 
+
 class Planner(Protocol):
     def plan(self, *, prompt: str, n_keyframes: int, segment_seconds: int, style: str | None) -> KeyframePlan: ...
 
 
 PLAN_SYSTEM = (
-    "You are a storyboard artist for vertical (9:16) AI-generated TikTok videos. Given a user idea, write N keyframes that a "
+    "You are a storyboard artist for vertical (9:16) AI-generated short-form videos. Given a user idea, write N keyframes that a "
     "video model will animate BETWEEN (first→last frame interpolation per segment). Rules:\n"
     "- First define a style_guide that keeps the same character(s), wardrobe, palette, lens and rendering style across ALL frames.\n"
     "- Each keyframe prompt must be self-contained and detailed (subject, action/pose, setting, light, camera angle, mood) and "
@@ -47,9 +49,15 @@ class OpenAIPlanner:
         self.model = s.openai_model
 
     def plan(self, *, prompt: str, n_keyframes: int, segment_seconds: int, style: str | None) -> KeyframePlan:
-        user = (f"IDEA: {prompt}\nSTYLE PREFERENCE: {style or 'cinematic, realistic'}\n"
-                f"Write exactly {n_keyframes} keyframes (index 0..{n_keyframes - 1}); each segment between neighbours lasts {segment_seconds} seconds.")
-        kwargs = dict(model=self.model, messages=[{"role": "system", "content": PLAN_SYSTEM}, {"role": "user", "content": user}], response_format=KeyframePlan)
+        user = (
+            f"IDEA: {prompt}\nSTYLE PREFERENCE: {style or 'cinematic, realistic'}\n"
+            f"Write exactly {n_keyframes} keyframes (index 0..{n_keyframes - 1}); each segment between neighbours lasts {segment_seconds} seconds."
+        )
+        kwargs = dict(
+            model=self.model,
+            messages=[{"role": "system", "content": PLAN_SYSTEM}, {"role": "user", "content": user}],
+            response_format=KeyframePlan,
+        )
         if not self.model.startswith(("o1", "o3", "o4", "gpt-5")):
             kwargs["temperature"] = 0.7
         msg = self._client.chat.completions.parse(**kwargs).choices[0].message
@@ -57,8 +65,10 @@ class OpenAIPlanner:
             raise RuntimeError(msg.refusal or "planner returned nothing")
         plan = msg.parsed
         # enforce count/index
-        plan.keyframes = [KeyframeSpec(index=i, prompt=k.prompt, caption=k.caption, motion_to_next=k.motion_to_next)
-                          for i, k in enumerate(plan.keyframes[:n_keyframes])]
+        plan.keyframes = [
+            KeyframeSpec(index=i, prompt=k.prompt, caption=k.caption, motion_to_next=k.motion_to_next)
+            for i, k in enumerate(plan.keyframes[:n_keyframes])
+        ]
         while len(plan.keyframes) < n_keyframes:
             last = plan.keyframes[-1]
             plan.keyframes.append(KeyframeSpec(index=len(plan.keyframes), prompt=last.prompt, caption=last.caption))
@@ -69,12 +79,17 @@ class FakePlanner:
     name = "fake"
 
     def plan(self, *, prompt: str, n_keyframes: int, segment_seconds: int, style: str | None) -> KeyframePlan:
-        return KeyframePlan(style_guide=f"fake style for: {prompt[:40]}",
-                            keyframes=[KeyframeSpec(index=i, prompt=f"{prompt} — keyframe {i}, vertical 9:16", caption=f"Frame {i}", motion_to_next="slow push in")
-                                       for i in range(n_keyframes)])
+        return KeyframePlan(
+            style_guide=f"fake style for: {prompt[:40]}",
+            keyframes=[
+                KeyframeSpec(index=i, prompt=f"{prompt} — keyframe {i}, vertical 9:16", caption=f"Frame {i}", motion_to_next="slow push in")
+                for i in range(n_keyframes)
+            ],
+        )
 
 
 # ---------------- images ----------------
+
 
 class ImageGen(Protocol):
     name: str
@@ -88,7 +103,9 @@ class ImageGen(Protocol):
 def _to_916_png(src: Path, dst: Path) -> Path:
     """Crop to 9:16 (centre) and scale to 1080×1920 PNG."""
     vf = "crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=1080:1920:flags=lanczos"
-    subprocess.run([get_settings().ffmpeg_bin, "-y", "-loglevel", "error", "-i", str(src), "-vf", vf, "-frames:v", "1", str(dst)], check=True)
+    subprocess.run(
+        [get_settings().ffmpeg_bin, "-y", "-loglevel", "error", "-i", str(src), "-vf", vf, "-frames:v", "1", str(dst)], check=True
+    )
     return dst
 
 
@@ -110,12 +127,15 @@ class OpenAIImageGen:
         s = get_settings()
         if reference is not None and reference.is_file() and not self.model.startswith("dall-e"):
             # continuity: edit endpoint with the previous keyframe as the reference image
-            edit_prompt = ("Use the reference image for continuity: keep the SAME character (face, hair, wardrobe), the same place, "
-                           "palette, lens and rendering style. Now create the NEXT frame of the story:\n" + prompt)
+            edit_prompt = (
+                "Use the reference image for continuity: keep the SAME character (face, hair, wardrobe), the same place, "
+                "palette, lens and rendering style. Now create the NEXT frame of the story:\n" + prompt
+            )
             extra = {"input_fidelity": s.openai_image_input_fidelity} if self.model == "gpt-image-1" else {}  # gpt-image-2 rejects it
             with reference.open("rb") as fh:
-                resp = self._client.images.edit(model=self.model, image=[fh], prompt=edit_prompt, n=1, size=self.size,
-                                                quality=s.openai_image_quality, **extra)
+                resp = self._client.images.edit(
+                    model=self.model, image=[fh], prompt=edit_prompt, n=1, size=self.size, quality=s.openai_image_quality, **extra
+                )
         else:
             kwargs = dict(model=self.model, prompt=prompt, n=1, size=self.size)
             if not self.model.startswith("dall-e"):
@@ -144,12 +164,27 @@ class FakeImageGen:
     def generate(self, *, prompt: str, out_path: Path, reference: Path | None = None) -> Path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         color = self._colors[sum(map(ord, prompt)) % len(self._colors)]
-        subprocess.run([get_settings().ffmpeg_bin, "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"color=c={color}:s={W}x{H}:d=0.1",
-                        "-frames:v", "1", str(out_path)], check=True)
+        subprocess.run(
+            [
+                get_settings().ffmpeg_bin,
+                "-y",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                f"color=c={color}:s={W}x{H}:d=0.1",
+                "-frames:v",
+                "1",
+                str(out_path),
+            ],
+            check=True,
+        )
         return out_path
 
 
 # ---------------- video ----------------
+
 
 class VideoGen(Protocol):
     name: str
@@ -202,11 +237,14 @@ class OmniVideoGen:
         b64 = lambda p: base64.b64encode(p.read_bytes()).decode()  # noqa: E731
         it = self._client.interactions.create(
             model=self.model,
-            input=[{"type": "image", "data": b64(first), "mime_type": "image/png"},
-                   {"type": "image", "data": b64(last), "mime_type": "image/png"},
-                   {"type": "text", "text": prompt}],
+            input=[
+                {"type": "image", "data": b64(first), "mime_type": "image/png"},
+                {"type": "image", "data": b64(last), "mime_type": "image/png"},
+                {"type": "text", "text": prompt},
+            ],
             response_format={"type": "video", "aspect_ratio": "9:16", "delivery": "uri"},
-            background=False, store=True,
+            background=False,
+            store=True,
         )
         self.last_ref = getattr(it, "id", None)
         return self._save_interaction_video(it, out_path)
@@ -215,8 +253,12 @@ class OmniVideoGen:
         """Stateful edit: new interaction chained to the previous one (official 'Stateful video editing')."""
         out_path.parent.mkdir(parents=True, exist_ok=True)
         it = self._client.interactions.create(
-            model=self.model, previous_interaction_id=ref, input=instruction,
-            response_format={"type": "video", "aspect_ratio": "9:16", "delivery": "uri"}, background=False, store=True,
+            model=self.model,
+            previous_interaction_id=ref,
+            input=instruction,
+            response_format={"type": "video", "aspect_ratio": "9:16", "delivery": "uri"},
+            background=False,
+            store=True,
         )
         self.last_ref = getattr(it, "id", None)
         return self._save_interaction_video(it, out_path)
@@ -282,9 +324,13 @@ class GoogleVideoGen:
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
         first_img = types.Image(image_bytes=first.read_bytes(), mime_type="image/png")
-        cfg = types.GenerateVideosConfig(aspect_ratio="9:16", duration_seconds=seconds, number_of_videos=1,
-                                         person_generation=get_settings().google_person_generation,
-                                         last_frame=types.Image(image_bytes=last.read_bytes(), mime_type="image/png"))
+        cfg = types.GenerateVideosConfig(
+            aspect_ratio="9:16",
+            duration_seconds=seconds,
+            number_of_videos=1,
+            person_generation=get_settings().google_person_generation,
+            last_frame=types.Image(image_bytes=last.read_bytes(), mime_type="image/png"),
+        )
         try:  # new SDK signature
             src = types.GenerateVideosSource(prompt=prompt, image=first_img)
             op = self._client.models.generate_videos(model=self.model, source=src, config=cfg)
@@ -310,7 +356,9 @@ class GoogleVideoGen:
         if not data and getattr(vid, "uri", None):
             import httpx
 
-            data = httpx.get(vid.uri, headers={"x-goog-api-key": get_settings().google_api_key or ""}, timeout=300, follow_redirects=True).content
+            data = httpx.get(
+                vid.uri, headers={"x-goog-api-key": get_settings().google_api_key or ""}, timeout=300, follow_redirects=True
+            ).content
         if not data:
             raise RuntimeError("could not download generated video")
         raw = out_path.with_suffix(".raw.mp4")
@@ -323,8 +371,34 @@ class GoogleVideoGen:
 def _normalize_segment(src: Path, dst: Path) -> None:
     """Re-encode any provider output to 1080×1920 / 30 fps / h264 / aac-silent-or-original so concat is lossless-safe."""
     vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,format=yuv420p"
-    subprocess.run([get_settings().ffmpeg_bin, "-y", "-loglevel", "error", "-i", str(src), "-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
-                    "-crf", "18", "-c:a", "aac", "-ar", "44100", "-ac", "2", "-video_track_timescale", "15360", str(dst)], check=True)
+    subprocess.run(
+        [
+            get_settings().ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(src),
+            "-vf",
+            vf,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-c:a",
+            "aac",
+            "-ar",
+            "44100",
+            "-ac",
+            "2",
+            "-video_track_timescale",
+            "15360",
+            str(dst),
+        ],
+        check=True,
+    )
 
 
 class FakeVideoGen:
@@ -344,8 +418,28 @@ class FakeVideoGen:
         if src is None:
             raise RuntimeError("nothing to edit")
         tmp = out_path.with_suffix(".edit.mp4")
-        subprocess.run([get_settings().ffmpeg_bin, "-y", "-loglevel", "error", "-i", str(src), "-vf", "hue=s=0.3", "-c:v", "libx264", "-preset", "ultrafast",
-                        "-crf", "28", "-c:a", "copy", str(tmp)], check=True)
+        subprocess.run(
+            [
+                get_settings().ffmpeg_bin,
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                str(src),
+                "-vf",
+                "hue=s=0.3",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "28",
+                "-c:a",
+                "copy",
+                str(tmp),
+            ],
+            check=True,
+        )
         tmp.replace(out_path)
         FakeVideoGen._counter += 1
         self.last_ref = f"fake_interaction_{FakeVideoGen._counter}"
@@ -356,13 +450,44 @@ class FakeVideoGen:
         FakeVideoGen._counter += 1
         self.last_ref = f"fake_interaction_{FakeVideoGen._counter}"
         d = max(2, seconds)
-        fc = (f"[0:v]scale={W}:{H},format=yuv420p,loop=loop={d*30}:size=1:start=0,setpts=N/30/TB[a];"
-              f"[1:v]scale={W}:{H},format=yuv420p,loop=loop={d*30}:size=1:start=0,setpts=N/30/TB[b];"
-              f"[a][b]xfade=transition=fade:duration={d - 1}:offset=0.5,fps=30[v];"
-              f"anullsrc=r=44100:cl=stereo,atrim=0:{d}[aout]")
-        subprocess.run([get_settings().ffmpeg_bin, "-y", "-loglevel", "error", "-i", str(first), "-i", str(last), "-filter_complex", fc,
-                        "-map", "[v]", "-map", "[aout]", "-t", str(d), "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-                        "-c:a", "aac", "-video_track_timescale", "15360", str(out_path)], check=True)
+        fc = (
+            f"[0:v]scale={W}:{H},format=yuv420p,loop=loop={d * 30}:size=1:start=0,setpts=N/30/TB[a];"
+            f"[1:v]scale={W}:{H},format=yuv420p,loop=loop={d * 30}:size=1:start=0,setpts=N/30/TB[b];"
+            f"[a][b]xfade=transition=fade:duration={d - 1}:offset=0.5,fps=30[v];"
+            f"anullsrc=r=44100:cl=stereo,atrim=0:{d}[aout]"
+        )
+        subprocess.run(
+            [
+                get_settings().ffmpeg_bin,
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                str(first),
+                "-i",
+                str(last),
+                "-filter_complex",
+                fc,
+                "-map",
+                "[v]",
+                "-map",
+                "[aout]",
+                "-t",
+                str(d),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "28",
+                "-c:a",
+                "aac",
+                "-video_track_timescale",
+                "15360",
+                str(out_path),
+            ],
+            check=True,
+        )
         return out_path
 
 
@@ -370,46 +495,125 @@ class FakeVideoGen:
 
 FAL_MODELS: dict[str, dict] = {
     "minimax-h3": {
-        "endpoint": "minimax/h3/image-to-video", "label": "MiniMax H3 (Hailuo 3)", "max_seconds": 15, "min_seconds": 5,
-        "price_hint": "~$0.26/s 2K", "price_per_second": 0.26, "note": "first+last frame, 2K, native audio · i2v arena #2",
-        "args": lambda first, last, prompt, sec: {"prompt": prompt, "image_url": first, "end_image_url": last, "resolution": "2K",
-                                                  "duration": int(sec), "enable_prompt_expansion": False},
+        "endpoint": "minimax/h3/image-to-video",
+        "label": "MiniMax H3 (Hailuo 3)",
+        "max_seconds": 15,
+        "min_seconds": 5,
+        "price_hint": "~$0.26/s 2K",
+        "price_per_second": 0.26,
+        "note": "first+last frame, 2K, native audio · i2v arena #2",
+        "args": lambda first, last, prompt, sec: {
+            "prompt": prompt,
+            "image_url": first,
+            "end_image_url": last,
+            "resolution": "2K",
+            "duration": int(sec),
+            "enable_prompt_expansion": False,
+        },
     },
     "seedance-2.0": {
-        "endpoint": "bytedance/seedance-2.0/image-to-video", "label": "Seedance 2.0 (720p)", "max_seconds": 15, "min_seconds": 4,
-        "price_hint": "~$0.30/s", "price_per_second": 0.3034, "note": "first+last frame, audio · i2v arena #1",
-        "args": lambda first, last, prompt, sec: {"prompt": prompt, "image_url": first, "end_image_url": last, "aspect_ratio": "9:16",
-                                                  "resolution": "720p", "duration": str(int(sec)), "generate_audio": True},
+        "endpoint": "bytedance/seedance-2.0/image-to-video",
+        "label": "Seedance 2.0 (720p)",
+        "max_seconds": 15,
+        "min_seconds": 4,
+        "price_hint": "~$0.30/s",
+        "price_per_second": 0.3034,
+        "note": "first+last frame, audio · i2v arena #1",
+        "args": lambda first, last, prompt, sec: {
+            "prompt": prompt,
+            "image_url": first,
+            "end_image_url": last,
+            "aspect_ratio": "9:16",
+            "resolution": "720p",
+            "duration": str(int(sec)),
+            "generate_audio": True,
+        },
     },
     "seedance-2.0-fast": {
-        "endpoint": "bytedance/seedance-2.0/fast/image-to-video", "label": "Seedance 2.0 Fast (720p)", "max_seconds": 15, "min_seconds": 4,
-        "price_hint": "~$0.24/s", "price_per_second": 0.2419, "note": "cheaper/faster Seedance, first+last frame",
-        "args": lambda first, last, prompt, sec: {"prompt": prompt, "image_url": first, "end_image_url": last, "aspect_ratio": "9:16",
-                                                  "resolution": "720p", "duration": str(int(sec)), "generate_audio": True},
+        "endpoint": "bytedance/seedance-2.0/fast/image-to-video",
+        "label": "Seedance 2.0 Fast (720p)",
+        "max_seconds": 15,
+        "min_seconds": 4,
+        "price_hint": "~$0.24/s",
+        "price_per_second": 0.2419,
+        "note": "cheaper/faster Seedance, first+last frame",
+        "args": lambda first, last, prompt, sec: {
+            "prompt": prompt,
+            "image_url": first,
+            "end_image_url": last,
+            "aspect_ratio": "9:16",
+            "resolution": "720p",
+            "duration": str(int(sec)),
+            "generate_audio": True,
+        },
     },
     "kling-3.0-std": {
-        "endpoint": "fal-ai/kling-video/v3/standard/image-to-video", "label": "Kling 3.0 Standard", "max_seconds": 15, "min_seconds": 3,
-        "price_hint": "~$0.08/s", "price_per_second": 0.084, "note": "cheapest; first+last frame (aspect follows the image)",
-        "args": lambda first, last, prompt, sec: {"prompt": prompt, "start_image_url": first, "end_image_url": last,
-                                                  "duration": str(int(sec)), "generate_audio": False},
+        "endpoint": "fal-ai/kling-video/v3/standard/image-to-video",
+        "label": "Kling 3.0 Standard",
+        "max_seconds": 15,
+        "min_seconds": 3,
+        "price_hint": "~$0.08/s",
+        "price_per_second": 0.084,
+        "note": "cheapest; first+last frame (aspect follows the image)",
+        "args": lambda first, last, prompt, sec: {
+            "prompt": prompt,
+            "start_image_url": first,
+            "end_image_url": last,
+            "duration": str(int(sec)),
+            "generate_audio": False,
+        },
     },
     "seedance-2.5": {
-        "endpoint": "bytedance/seedance-2.5/image-to-video", "label": "Seedance 2.5 (720p)", "max_seconds": 30, "min_seconds": 4,
-        "price_hint": "~$0.47/s", "price_per_second": 0.473, "note": "newest Seedance; single-shot up to 30 s, first+last frame, audio",
-        "args": lambda first, last, prompt, sec: {"prompt": prompt, "image_url": first, "end_image_url": last, "aspect_ratio": "9:16",
-                                                  "resolution": "720p", "duration": str(int(sec)), "generate_audio": True},
+        "endpoint": "bytedance/seedance-2.5/image-to-video",
+        "label": "Seedance 2.5 (720p)",
+        "max_seconds": 30,
+        "min_seconds": 4,
+        "price_hint": "~$0.47/s",
+        "price_per_second": 0.473,
+        "note": "newest Seedance; single-shot up to 30 s, first+last frame, audio",
+        "args": lambda first, last, prompt, sec: {
+            "prompt": prompt,
+            "image_url": first,
+            "end_image_url": last,
+            "aspect_ratio": "9:16",
+            "resolution": "720p",
+            "duration": str(int(sec)),
+            "generate_audio": True,
+        },
     },
     "seedance-2.0-1080p": {
-        "endpoint": "bytedance/seedance-2.0/image-to-video", "label": "Seedance 2.0 (1080p)", "max_seconds": 15, "min_seconds": 4,
-        "price_hint": "~$0.68/s", "price_per_second": 0.682, "note": "same model at 1080p (sharper, 2× price)",
-        "args": lambda first, last, prompt, sec: {"prompt": prompt, "image_url": first, "end_image_url": last, "aspect_ratio": "9:16",
-                                                  "resolution": "1080p", "duration": str(int(sec)), "generate_audio": True},
+        "endpoint": "bytedance/seedance-2.0/image-to-video",
+        "label": "Seedance 2.0 (1080p)",
+        "max_seconds": 15,
+        "min_seconds": 4,
+        "price_hint": "~$0.68/s",
+        "price_per_second": 0.682,
+        "note": "same model at 1080p (sharper, 2× price)",
+        "args": lambda first, last, prompt, sec: {
+            "prompt": prompt,
+            "image_url": first,
+            "end_image_url": last,
+            "aspect_ratio": "9:16",
+            "resolution": "1080p",
+            "duration": str(int(sec)),
+            "generate_audio": True,
+        },
     },
     "kling-3.0-pro": {
-        "endpoint": "fal-ai/kling-video/v3/pro/image-to-video", "label": "Kling 3.0 Pro", "max_seconds": 15, "min_seconds": 3,
-        "price_hint": "~$0.42/s", "price_per_second": 0.42, "note": "higher-quality Kling tier, first+last frame, audio",
-        "args": lambda first, last, prompt, sec: {"prompt": prompt, "start_image_url": first, "end_image_url": last,
-                                                  "duration": str(int(sec)), "generate_audio": True},
+        "endpoint": "fal-ai/kling-video/v3/pro/image-to-video",
+        "label": "Kling 3.0 Pro",
+        "max_seconds": 15,
+        "min_seconds": 3,
+        "price_hint": "~$0.42/s",
+        "price_per_second": 0.42,
+        "note": "higher-quality Kling tier, first+last frame, audio",
+        "args": lambda first, last, prompt, sec: {
+            "prompt": prompt,
+            "start_image_url": first,
+            "end_image_url": last,
+            "duration": str(int(sec)),
+            "generate_audio": True,
+        },
     },
 }
 
@@ -475,6 +679,7 @@ class FalVideoGen:
 
 # ---------------- factories ----------------
 
+
 def get_planner(name: str | None = None) -> Planner:
     n = (name or get_settings().lab_planner).lower()
     return FakePlanner() if n == "fake" else OpenAIPlanner()
@@ -511,23 +716,76 @@ def list_video_providers() -> list[dict]:
     """Metadata for the UI: which providers/models exist, prices, limits and whether their keys are configured."""
     s = get_settings()
     rows = [
-        {"id": "omni", "label": "Gemini Omni Flash", "vendor": "Google", "model": s.google_video_model, "max_seconds": 10, "min_seconds": 2,
-         "supports_edit": True, "first_last": False, "audio": True, "price_hint": "~$0.10/s", "price_per_second": 0.10,
-         "note": "conversational clip edits; FIRST_FRAME + end-reference (no true interpolation)",
-         "available": bool(s.google_api_key), "needs": "GOOGLE_API_KEY"},
-        {"id": "veo", "label": "Veo 3.1 Fast", "vendor": "Google", "model": s.google_veo_model, "max_seconds": 8, "min_seconds": 4,
-         "supports_edit": False, "first_last": True, "audio": True, "price_hint": "~$0.15/s", "price_per_second": 0.15,
-         "note": "true first+last frame interpolation", "available": bool(s.google_api_key), "needs": "GOOGLE_API_KEY"},
+        {
+            "id": "omni",
+            "label": "Gemini Omni Flash",
+            "vendor": "Google",
+            "model": s.google_video_model,
+            "max_seconds": 10,
+            "min_seconds": 2,
+            "supports_edit": True,
+            "first_last": False,
+            "audio": True,
+            "price_hint": "~$0.10/s",
+            "price_per_second": 0.10,
+            "note": "conversational clip edits; FIRST_FRAME + end-reference (no true interpolation)",
+            "available": bool(s.google_api_key),
+            "needs": "GOOGLE_API_KEY",
+        },
+        {
+            "id": "veo",
+            "label": "Veo 3.1 Fast",
+            "vendor": "Google",
+            "model": s.google_veo_model,
+            "max_seconds": 8,
+            "min_seconds": 4,
+            "supports_edit": False,
+            "first_last": True,
+            "audio": True,
+            "price_hint": "~$0.15/s",
+            "price_per_second": 0.15,
+            "note": "true first+last frame interpolation",
+            "available": bool(s.google_api_key),
+            "needs": "GOOGLE_API_KEY",
+        },
     ]
     for key, spec in FAL_MODELS.items():
-        rows.append({"id": f"fal:{key}", "label": spec["label"], "vendor": "fal.ai", "model": spec["endpoint"], "max_seconds": spec["max_seconds"],
-                     "min_seconds": spec.get("min_seconds", 4), "supports_edit": False, "first_last": True,
-                     "audio": spec["args"]("a", "b", "p", 5).get("generate_audio", True) is not False,
-                     "price_hint": spec.get("price_hint"), "price_per_second": float(spec.get("price_per_second", 0)), "note": spec.get("note"),
-                     "available": bool(s.fal_key), "needs": "FAL_KEY"})
-    rows.append({"id": "fake", "label": "Fake (offline test)", "vendor": "local", "model": "fake-video", "max_seconds": 8, "min_seconds": 2,
-                 "supports_edit": True, "first_last": True, "audio": False, "price_hint": "free", "price_per_second": 0.0,
-                 "note": "cross-fade stand-in for tests", "available": True, "needs": None})
+        rows.append(
+            {
+                "id": f"fal:{key}",
+                "label": spec["label"],
+                "vendor": "fal.ai",
+                "model": spec["endpoint"],
+                "max_seconds": spec["max_seconds"],
+                "min_seconds": spec.get("min_seconds", 4),
+                "supports_edit": False,
+                "first_last": True,
+                "audio": spec["args"]("a", "b", "p", 5).get("generate_audio", True) is not False,
+                "price_hint": spec.get("price_hint"),
+                "price_per_second": float(spec.get("price_per_second", 0)),
+                "note": spec.get("note"),
+                "available": bool(s.fal_key),
+                "needs": "FAL_KEY",
+            }
+        )
+    rows.append(
+        {
+            "id": "fake",
+            "label": "Fake (offline test)",
+            "vendor": "local",
+            "model": "fake-video",
+            "max_seconds": 8,
+            "min_seconds": 2,
+            "supports_edit": True,
+            "first_last": True,
+            "audio": False,
+            "price_hint": "free",
+            "price_per_second": 0.0,
+            "note": "cross-fade stand-in for tests",
+            "available": True,
+            "needs": None,
+        }
+    )
     return rows
 
 

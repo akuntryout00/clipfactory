@@ -1,11 +1,11 @@
 """Prompt builders — kept separate so they can be tuned without touching provider code."""
+
 from __future__ import annotations
 
 import json
 
 from app.schemas.configs import PersonaConfig, TemplateConfig
 from app.schemas.pipeline import NormalizedScene, ScriptOutput, WordTiming
-
 
 _CLOSING = {
     "punchline_no_cta": "End on a single punchline. No call to action, no 'follow/like/comment'.",
@@ -15,10 +15,10 @@ _CLOSING = {
 _PRODUCT_POLICY = {
     "never": "Never mention the creator's own products.",
     "occasional_soft": "You MAY mention one of the creator's products only when the topic is directly about that problem, at most once, "
-                       "phrased casually ('I built a small tool for this called X'), never as a pitch. Use only the name and the "
-                       "one-liner given — never invent features, prices or results. Most videos should mention no product at all.",
+    "phrased casually ('I built a small tool for this called X'), never as a pitch. Use only the name and the "
+    "one-liner given — never invent features, prices or results. Most videos should mention no product at all.",
     "problem_solution_only": "Mention a product only in problem/solution templates as the solution, casually, name + one-liner only; "
-                             "never invent features.",
+    "never invent features.",
 }
 
 
@@ -34,7 +34,9 @@ def persona_block(p: PersonaConfig) -> str:
         if i.background:
             who += f" — {i.background}"
         lines.append(who + ".")
-        lines.append(f"Speak as this person in {i.speaks_as}. Only claim experiences consistent with this background; no invented anecdotes with specifics you weren't given.")
+        lines.append(
+            f"Speak as this person in {i.speaks_as}. Only claim experiences consistent with this background; no invented anecdotes with specifics you weren't given."
+        )
     lines += [
         f"Audience: {p.audience}",
         f"Language: {p.language}",
@@ -49,7 +51,10 @@ def persona_block(p: PersonaConfig) -> str:
         lines.append(f"Own products: {prods}. {_PRODUCT_POLICY[p.product_mention_policy]}")
     else:
         lines.append(_PRODUCT_POLICY["never"])
-    lines.append("Default closing (used only if the template does not define its own): " + _CLOSING.get(p.closing_style, _CLOSING["punchline_no_cta"]))
+    lines.append(
+        "Default closing (used only if the template does not define its own): "
+        + _CLOSING.get(p.closing_style, _CLOSING["punchline_no_cta"])
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -59,7 +64,7 @@ def template_block(t: TemplateConfig) -> str:
 
 
 SCRIPT_SYSTEM = (
-    "You write spoken-word scripts for short vertical TikTok videos that are narrated over real B-roll footage. "
+    "You write spoken-word scripts for short vertical videos (TikTok/Reels/Shorts style) narrated over real B-roll footage. "
     "You never produce video; you produce a script. Rules:\n"
     "- The first section is the HOOK: a pattern interrupt delivered in the first 1-2 seconds. No 'hey guys', no intro.\n"
     "- Conversational, spoken English. Short sentences. Contractions are fine.\n"
@@ -90,7 +95,7 @@ def shorten_user_prompt(persona: PersonaConfig, template: TemplateConfig, script
 
 
 PLAN_SYSTEM = (
-    "You are a short-form video editor planning B-roll shots for a narrated TikTok. You receive the spoken words with their "
+    "You are a short-form video editor planning B-roll shots for a narrated vertical video. You receive the spoken words with their "
     "indices and timestamps (seconds). Cut the video into scenes by choosing inclusive word-index ranges. Rules:\n"
     "- Scene boundaries must fall on sentence or clause changes, or when the visual concept changes — never arbitrary.\n"
     "- Scenes must cover every word exactly once, in order, with no gaps (first_word of scene n+1 = last_word of scene n + 1).\n"
@@ -105,12 +110,23 @@ PLAN_SYSTEM = (
 )
 
 
-def plan_user_prompt(persona: PersonaConfig, template: TemplateConfig, topic: str, script: ScriptOutput,
-                     words: list[WordTiming], voice_duration: float, section_ranges: dict[str, tuple[int, int]],
-                     library: str | None = None) -> str:
+def plan_user_prompt(
+    persona: PersonaConfig,
+    template: TemplateConfig,
+    topic: str,
+    script: ScriptOutput,
+    words: list[WordTiming],
+    voice_duration: float,
+    section_ranges: dict[str, tuple[int, int]],
+    library: str | None = None,
+) -> str:
     listing = "\n".join(f"{i}: {w.word} [{w.start:.2f}-{w.end:.2f}]" for i, w in enumerate(words))
     secs = "\n".join(f"  - {k}: words {a}-{b}" for k, (a, b) in section_ranges.items())
-    lib = f"\nAVAILABLE B-ROLL (plan only what this library can show; reference asset_ids in `intent` when one fits):\n{library}\n" if library else ""
+    lib = (
+        f"\nAVAILABLE B-ROLL (plan only what this library can show; reference asset_ids in `intent` when one fits):\n{library}\n"
+        if library
+        else ""
+    )
     return (
         f"{template_block(template)}\nTOPIC: {topic}\nVOICE DURATION: {voice_duration:.2f} s\n{lib}"
         f"SHOT LENGTH: {template.shot_duration.min}-{template.shot_duration.max} s; overlays allowed: {int(template.overlays.min)}-{int(template.overlays.max)}\n"
@@ -119,7 +135,7 @@ def plan_user_prompt(persona: PersonaConfig, template: TemplateConfig, topic: st
 
 
 RANK_SYSTEM = (
-    "You pick the best real B-roll clip for each scene of a narrated TikTok from a shortlist (for small libraries the shortlist is "
+    "You pick the best real B-roll clip for each scene of a narrated short-form video from a shortlist (for small libraries the shortlist is "
     "the whole library). Judge by the clip DESCRIPTION against the scene intent — the numeric score is only a weak prior. Rules:\n"
     "- Choose exactly one asset_id per scene, only from that scene's candidates.\n"
     "- Never use the same asset_id for two scenes.\n"
@@ -137,7 +153,9 @@ def rank_user_prompt(topic: str, scenes: list[NormalizedScene], candidates: dict
         cands = candidates.get(sc.order, [])
         c_lines = "\n".join(
             f"    - {c['asset_id']}: {c.get('description') or ''} | action={c.get('action')} location={c.get('location')} "
-            f"shot={c.get('shot')} dur={c.get('duration')} score={c.get('score')} recently_used={c.get('recently_used')}" for c in cands)
+            f"shot={c.get('shot')} dur={c.get('duration')} score={c.get('score')} recently_used={c.get('recently_used')}"
+            for c in cands
+        )
         blocks.append(f"SCENE {sc.order} [{sc.start:.1f}-{sc.end:.1f}s] ({sc.section}) intent: {sc.intent}\n  candidates:\n{c_lines}")
     return f"TOPIC: {topic}\n\n" + "\n\n".join(blocks) + "\n\nChoose one asset per scene."
 
@@ -152,8 +170,11 @@ ENRICH_SYSTEM = (
 
 
 def enrich_user_prompt(assets: list[dict]) -> str:
-    lines = [f"- {a['asset_id']} ({a['file']}): {a.get('description') or ''} | existing tags: {', '.join(a.get('tags') or [])} | "
-             f"action={a.get('action')} location={a.get('location')} shot={a.get('shot')}" for a in assets]
+    lines = [
+        f"- {a['asset_id']} ({a['file']}): {a.get('description') or ''} | existing tags: {', '.join(a.get('tags') or [])} | "
+        f"action={a.get('action')} location={a.get('location')} shot={a.get('shot')}"
+        for a in assets
+    ]
     return "CLIPS:\n" + "\n".join(lines) + "\n\nReturn one entry per asset_id."
 
 
@@ -168,6 +189,8 @@ ANALYZE_SYSTEM = (
 
 def analyze_user_prompt(filename: str, duration: float, categories: list[str], n_frames: int) -> str:
     cats = ", ".join(categories) if categories else "(none yet)"
-    return (f"Clip file: {filename} · duration {duration:.1f}s · {n_frames} frames sampled in order.\n"
-            f"Existing library categories (folders): {cats}. Pick the best one as suggested_category, or propose a short new one.\n"
-            "Fill every field.")
+    return (
+        f"Clip file: {filename} · duration {duration:.1f}s · {n_frames} frames sampled in order.\n"
+        f"Existing library categories (folders): {cats}. Pick the best one as suggested_category, or propose a short new one.\n"
+        "Fill every field."
+    )

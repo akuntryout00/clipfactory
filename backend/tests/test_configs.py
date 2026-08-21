@@ -1,15 +1,14 @@
 from pathlib import Path
 
 import pytest
-
 from app.config.loaders import (
     CONFIGS_DIR,
+    list_templates,
     load_caption_style,
     load_persona,
     load_template,
-    list_templates,
 )
-from app.schemas.configs import PersonaConfig, TemplateConfig, CaptionStyleConfig
+from app.schemas.configs import CaptionStyleConfig, PersonaConfig, TemplateConfig
 
 
 def test_persona_loads_and_validates():
@@ -44,9 +43,11 @@ def test_template_duration_ordering():
 
 def test_template_invalid_weights_rejected(tmp_path: Path):
     bad = tmp_path / "bad.json"
-    bad.write_text('{"id":"bad","name":"Bad","duration":{"min":15,"target":18,"max":22},'
-                   '"sections":[{"type":"hook","weight":0.5}],"voiceover":true,'
-                   '"caption_style":"dynamic_center"}')
+    bad.write_text(
+        '{"id":"bad","name":"Bad","duration":{"min":15,"target":18,"max":22},'
+        '"sections":[{"type":"hook","weight":0.5}],"voiceover":true,'
+        '"caption_style":"dynamic_center"}'
+    )
     with pytest.raises(ValueError):
         TemplateConfig.model_validate_json(bad.read_text())
 

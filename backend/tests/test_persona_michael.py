@@ -1,6 +1,5 @@
-from app.config.loaders import load_persona
+from app.config.loaders import load_persona, load_template
 from app.llm import prompts
-from app.config.loaders import load_template
 
 
 def test_michael_persona_loads_with_identity_tools_products():

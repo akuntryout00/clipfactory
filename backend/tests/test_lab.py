@@ -1,17 +1,18 @@
 """AI Lab — isolated module: prompt → keyframe images (OpenAI) → animated segments (Google) → 9:16 MP4."""
+
+import time
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
 from app.assets.metadata import probe_video
 from app.db import Base
+from app.lab.models import LabKeyframe, LabSegment, LabVideo  # noqa: F401 (register tables)
 from app.lab.planning import segment_plan
 from app.lab.providers import FakeImageGen, FakePlanner, FakeVideoGen
 from app.lab.service import LabService
-from app.lab.models import LabVideo, LabKeyframe, LabSegment  # noqa: F401 (register tables)
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 
 @pytest.mark.parametrize("dur,n_seg,seg", [(15, 2, 8), (18, 3, 6), (20, 3, 7), (25, 4, 6)])
@@ -30,7 +31,8 @@ def test_service_uses_provider_max_seconds(tmp_path):
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, expire_on_commit=False)()
-    vg = FakeVideoGen(); vg.max_seconds = 10
+    vg = FakeVideoGen()
+    vg.max_seconds = 10
     svc = LabService(s, image=FakeImageGen(), video=vg, planner=FakePlanner(), storage_dir=tmp_path / "storage")
     v = svc.create(prompt="A quiet cafe morning", target_duration=20)
     assert (v.n_segments, v.segment_seconds) == (2, 10)
@@ -77,11 +79,13 @@ def test_retry_resumes_from_failed_stage(lab, monkeypatch):
     svc.plan(v.id)
     calls = {"n": 0}
     real = svc.image.generate
+
     def flaky(*, prompt, out_path, reference=None):
         calls["n"] += 1
         if calls["n"] == 2:
             raise RuntimeError("image API down")
         return real(prompt=prompt, out_path=out_path, reference=reference)
+
     monkeypatch.setattr(svc.image, "generate", flaky)
     with pytest.raises(RuntimeError):
         svc.generate_images(v.id)
@@ -137,8 +141,12 @@ def test_lab_api_flow(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'lab.db'}", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
-    app = create_app(session_factory=factory, jobs=InlineJobRunner(), service_kwargs=dict(storage_dir=tmp_path / "storage"),
-                     lab_kwargs=dict(image=FakeImageGen(), video=FakeVideoGen(), planner=FakePlanner()))
+    app = create_app(
+        session_factory=factory,
+        jobs=InlineJobRunner(),
+        service_kwargs=dict(storage_dir=tmp_path / "storage"),
+        lab_kwargs=dict(image=FakeImageGen(), video=FakeVideoGen(), planner=FakePlanner()),
+    )
     with TestClient(app) as c:
         r = c.post("/lab/videos", json={"prompt": "Cozy cafe morning, cinematic", "target_duration": 18})
         assert r.status_code == 201, r.text
@@ -167,7 +175,7 @@ def test_animate_force_redoes_finished_segments(lab):
     svc.animate(v.id)
     first_paths = [Path(x.video_path) for x in svc.segments(v.id)]
     mtimes = [p.stat().st_mtime_ns for p in first_paths]
-    import time; time.sleep(0.05)
+    time.sleep(0.05)
     svc.animate(v.id)  # no force → segments untouched
     assert [p.stat().st_mtime_ns for p in first_paths] == mtimes
     svc.animate(v.id, force=True)  # force → re-rendered
@@ -182,6 +190,7 @@ def test_generate_images_chains_previous_frame_as_reference(tmp_path):
 
     class RecordingImage(FakeImageGen):
         calls: list[tuple[str, str | None]] = []
+
         def generate(self, *, prompt, out_path, reference=None):
             self.calls.append((str(out_path.name), str(reference.name) if reference else None))
             return super().generate(prompt=prompt, out_path=out_path, reference=reference)
@@ -191,7 +200,12 @@ def test_generate_images_chains_previous_frame_as_reference(tmp_path):
     v = svc.create(prompt="A quiet cafe morning", target_duration=18)  # 4 keyframes
     svc.plan(v.id)
     svc.generate_images(v.id)
-    assert img.calls == [("kf_00_v1.png", None), ("kf_01_v1.png", "kf_00_v1.png"), ("kf_02_v1.png", "kf_01_v1.png"), ("kf_03_v1.png", "kf_02_v1.png")]
+    assert img.calls == [
+        ("kf_00_v1.png", None),
+        ("kf_01_v1.png", "kf_00_v1.png"),
+        ("kf_02_v1.png", "kf_01_v1.png"),
+        ("kf_03_v1.png", "kf_02_v1.png"),
+    ]
     # regenerating frame 2 uses frame 1 as reference
     img.calls.clear()
     svc.regenerate_keyframe(v.id, 2, prompt="a red door in the rain")
@@ -200,26 +214,19 @@ def test_generate_images_chains_previous_frame_as_reference(tmp_path):
 
 def test_default_image_quality_is_low():
     from app.config.settings import Settings
+
     assert Settings(_env_file=None).openai_image_quality == "low"
-
-
-def _unused_parallel_test(tmp_path):
-    import time
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
-    Base.metadata.create_all(engine)
-    s = sessionmaker(bind=engine, expire_on_commit=False)()
-
-    pass
 
 
 def test_regenerate_segment_with_new_prompt_reconcats(lab):
     svc, s = lab
     v = svc.create(prompt="A quiet cafe morning", target_duration=15)
-    svc.run_to_images(v.id); svc.animate(v.id)
+    svc.run_to_images(v.id)
+    svc.animate(v.id)
     seg0 = svc.segments(v.id)[0]
     old_mtime = Path(seg0.video_path).stat().st_mtime_ns
     final_mtime = Path(svc.get(v.id).final_path).stat().st_mtime_ns
-    import time; time.sleep(0.05)
+    time.sleep(0.05)
     svc.regenerate_segment(v.id, 0, prompt="whip pan to the door")
     seg0 = svc.segments(v.id)[0]
     assert seg0.prompt == "whip pan to the door" and Path(seg0.video_path).stat().st_mtime_ns != old_mtime
@@ -230,7 +237,8 @@ def test_regenerate_segment_with_new_prompt_reconcats(lab):
 def test_edit_segment_uses_provider_edit_when_available(lab):
     svc, s = lab
     v = svc.create(prompt="A quiet cafe morning", target_duration=15)
-    svc.run_to_images(v.id); svc.animate(v.id)
+    svc.run_to_images(v.id)
+    svc.animate(v.id)
     seg1 = svc.segments(v.id)[1]
     assert seg1.provider_ref  # fake provider hands back an id like a real interaction
     svc.regenerate_segment(v.id, 1, edit_instruction="make it night time, keep everything else the same")
@@ -242,7 +250,8 @@ def test_edit_segment_uses_provider_edit_when_available(lab):
 def test_set_duration_same_segment_count_keeps_keyframes(lab):
     svc, s = lab
     v = svc.create(prompt="A quiet cafe morning", target_duration=15)  # 2×8 (fake max 8)
-    svc.run_to_images(v.id); svc.animate(v.id)
+    svc.run_to_images(v.id)
+    svc.animate(v.id)
     kf_paths = [k.image_path for k in svc.keyframes(v.id)]
     v = svc.set_duration(v.id, 16)  # still 2 segments
     assert (v.n_segments, v.segment_seconds) == (2, 8)
@@ -264,15 +273,19 @@ def test_set_duration_new_segment_count_replans(lab):
 def test_clone_copies_keyframes_and_animates_with_other_provider(lab, tmp_path):
     svc, s = lab
     v = svc.create(prompt="A quiet cafe morning", target_duration=15)
-    svc.run_to_images(v.id); svc.animate(v.id)
-    other = FakeVideoGen(); other.model = "other-video-model"; other.max_seconds = 6
+    svc.run_to_images(v.id)
+    svc.animate(v.id)
+    other = FakeVideoGen()
+    other.model = "other-video-model"
+    other.max_seconds = 6
     svc2 = LabService(s, image=svc.image, video=other, planner=svc.planner, storage_dir=svc.storage_dir.parent)
     c = svc2.clone(v.id)
     assert c.id != v.id and c.prompt == v.prompt and c.video_model == "other-video-model"
     # other provider max 6 s → 15 s needs 3×5 (4 keyframes) ≠ 3 keyframes → keyframes can't be reused → must re-plan
     assert (c.n_segments, c.segment_seconds) == (3, 5) and c.status == "PLANNING" and svc2.keyframes(c.id) == []
     # same segment count → keyframes are copied and the clone is ready to animate
-    same = FakeVideoGen(); same.model = "same-count-model"
+    same = FakeVideoGen()
+    same.model = "same-count-model"
     svc3 = LabService(s, image=svc.image, video=same, planner=svc.planner, storage_dir=svc.storage_dir.parent)
     c2 = svc3.clone(v.id)
     assert c2.status == "IMAGES_READY" and len(svc3.keyframes(c2.id)) == 3
@@ -288,8 +301,12 @@ def test_lab_api_providers_and_create_with_provider(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'lab2.db'}", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
-    app = create_app(session_factory=factory, jobs=InlineJobRunner(), service_kwargs=dict(storage_dir=tmp_path / "storage"),
-                     lab_kwargs=dict(image=FakeImageGen(), planner=FakePlanner()))
+    app = create_app(
+        session_factory=factory,
+        jobs=InlineJobRunner(),
+        service_kwargs=dict(storage_dir=tmp_path / "storage"),
+        lab_kwargs=dict(image=FakeImageGen(), planner=FakePlanner()),
+    )
     with TestClient(app) as c:
         provs = c.get("/lab/providers").json()
         assert any(p["id"] == "fake" for p in provs) and any(p["id"].startswith("fal:") for p in provs)

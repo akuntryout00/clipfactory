@@ -1,10 +1,11 @@
 """Background job execution for long pipeline operations (PRD §22: generation runs as a background job)."""
+
 from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Callable
 
 log = logging.getLogger(__name__)
 

@@ -1,4 +1,5 @@
 """Post-render quality checks (PRD §41)."""
+
 from __future__ import annotations
 
 from pathlib import Path

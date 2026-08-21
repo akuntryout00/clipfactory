@@ -2,6 +2,7 @@
 
 Voice timings are the master clock (PRD §30). Scenes never use fixed 5 s blocks (PRD §17).
 """
+
 from __future__ import annotations
 
 import re
@@ -43,7 +44,6 @@ def heuristic_plan(script: ScriptOutput, words: list[WordTiming], template: Temp
     ranges = section_word_ranges(script, words)
     ideal = (template.shot_duration.min + template.shot_duration.max) / 2.0
     scenes: list[PlannedScene] = []
-    section_index = 0
     for sec_type, (lo, hi) in ranges.items():
         start_i = lo
         breaks = set(_sentence_breaks(words, lo, hi))
@@ -52,16 +52,22 @@ def heuristic_plan(script: ScriptOutput, words: list[WordTiming], template: Temp
             dur = words[i].end - words[start_i].start
             is_last = i == hi
             if is_last or (dur >= ideal and (i in breaks or dur >= template.shot_duration.max)):
-                tags = _tags_from_text(" ".join(w.word for w in words[start_i:i + 1]))
+                tags = _tags_from_text(" ".join(w.word for w in words[start_i : i + 1]))
                 overlay = None
                 if sec_type.startswith("item_") or sec_type == "hook":
-                    overlay = _overlay_from_text(sec_type, " ".join(w.word for w in words[start_i:i + 1]))
-                scenes.append(PlannedScene(section=sec_type, first_word=start_i, last_word=i,
-                                           intent=f"{sec_type}: {' '.join(w.word for w in words[start_i:i + 1])}",
-                                           query_tags=tags, overlay_text=overlay if start_i == lo else None))
+                    overlay = _overlay_from_text(sec_type, " ".join(w.word for w in words[start_i : i + 1]))
+                scenes.append(
+                    PlannedScene(
+                        section=sec_type,
+                        first_word=start_i,
+                        last_word=i,
+                        intent=f"{sec_type}: {' '.join(w.word for w in words[start_i : i + 1])}",
+                        query_tags=tags,
+                        overlay_text=overlay if start_i == lo else None,
+                    )
+                )
                 start_i = i + 1
             i += 1
-        section_index += 1
     return ScenePlanOutput(scenes=scenes)
 
 
@@ -86,7 +92,9 @@ def _overlay_from_text(section: str, text: str) -> str | None:
     return " ".join(words[:3]).upper()
 
 
-def normalize_plan(plan: ScenePlanOutput, words: list[WordTiming], template: TemplateConfig, voice_duration: float) -> list[NormalizedScene]:
+def normalize_plan(
+    plan: ScenePlanOutput, words: list[WordTiming], template: TemplateConfig, voice_duration: float
+) -> list[NormalizedScene]:
     """Snap LLM word ranges to real timings, fix gaps/overlaps, merge too-short and split too-long shots,
     cap overlays, and return ordered contiguous scenes covering [0, voice_duration + tail]."""
     n_words = len(words)
@@ -99,16 +107,27 @@ def normalize_plan(plan: ScenePlanOutput, words: list[WordTiming], template: Tem
     fixed: list[PlannedScene] = []
     cursor = 0
     for s in raw:
-        f = max(cursor, min(s.first_word, n_words - 1))
-        l = max(f, min(s.last_word, n_words - 1))
-        if f > l or f >= n_words:
+        first = max(cursor, min(s.first_word, n_words - 1))
+        last = max(first, min(s.last_word, n_words - 1))
+        if first > last or first >= n_words:
             continue
-        fixed.append(PlannedScene(section=s.section, first_word=f, last_word=l, intent=s.intent,
-                                  query_tags=s.query_tags, overlay_text=s.overlay_text))
-        cursor = l + 1
+        fixed.append(
+            PlannedScene(
+                section=s.section, first_word=first, last_word=last, intent=s.intent, query_tags=s.query_tags, overlay_text=s.overlay_text
+            )
+        )
+        cursor = last + 1
     if not fixed:
-        fixed = [PlannedScene(section=template.sections[0].type, first_word=0, last_word=n_words - 1,
-                              intent="generic", query_tags=["desk", "laptop"], overlay_text=None)]
+        fixed = [
+            PlannedScene(
+                section=template.sections[0].type,
+                first_word=0,
+                last_word=n_words - 1,
+                intent="generic",
+                query_tags=["desk", "laptop"],
+                overlay_text=None,
+            )
+        ]
     if fixed[0].first_word != 0:
         fixed[0].first_word = 0
     if fixed[-1].last_word != n_words - 1:
@@ -125,10 +144,26 @@ def normalize_plan(plan: ScenePlanOutput, words: list[WordTiming], template: Tem
             s = stack.pop(0)
             if dur_of(s) > smax * 1.15 and s.last_word > s.first_word:
                 mid_t = words[s.first_word].start + dur_of(s) / 2
-                best = min(range(s.first_word, s.last_word),
-                           key=lambda i: abs(words[i].end - mid_t) - (0.3 if re.search(r"[.!?,;:]$", words[i].word) else 0))
-                a = PlannedScene(section=s.section, first_word=s.first_word, last_word=best, intent=s.intent, query_tags=s.query_tags, overlay_text=s.overlay_text)
-                b = PlannedScene(section=s.section, first_word=best + 1, last_word=s.last_word, intent=s.intent, query_tags=s.query_tags, overlay_text=None)
+                best = min(
+                    range(s.first_word, s.last_word),
+                    key=lambda i: abs(words[i].end - mid_t) - (0.3 if re.search(r"[.!?,;:]$", words[i].word) else 0),
+                )
+                a = PlannedScene(
+                    section=s.section,
+                    first_word=s.first_word,
+                    last_word=best,
+                    intent=s.intent,
+                    query_tags=s.query_tags,
+                    overlay_text=s.overlay_text,
+                )
+                b = PlannedScene(
+                    section=s.section,
+                    first_word=best + 1,
+                    last_word=s.last_word,
+                    intent=s.intent,
+                    query_tags=s.query_tags,
+                    overlay_text=None,
+                )
                 stack = [a, b] + stack
             else:
                 out.append(s)
@@ -175,9 +210,19 @@ def normalize_plan(plan: ScenePlanOutput, words: list[WordTiming], template: Tem
     for i, s in enumerate(merged):
         start = 0.0 if i == 0 else scenes[-1].end
         end = end_total if i == len(merged) - 1 else round((words[s.last_word].end + words[s.last_word + 1].start) / 2, 3)
-        scenes.append(NormalizedScene(order=i + 1, section=s.section, start=round(start, 3), end=round(end, 3),
-                                      first_word=s.first_word, last_word=s.last_word, intent=s.intent,
-                                      query_tags=s.query_tags or ["desk"], overlay_text=_clean_overlay(s.overlay_text)))
+        scenes.append(
+            NormalizedScene(
+                order=i + 1,
+                section=s.section,
+                start=round(start, 3),
+                end=round(end, 3),
+                first_word=s.first_word,
+                last_word=s.last_word,
+                intent=s.intent,
+                query_tags=s.query_tags or ["desk"],
+                overlay_text=_clean_overlay(s.overlay_text),
+            )
+        )
 
     # 5) cap overlays to template.max (keep earliest / hook & last payoff first)
     max_ov = int(template.overlays.max)

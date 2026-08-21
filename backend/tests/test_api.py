@@ -1,8 +1,4 @@
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
 from app.api.main import create_app
 from app.assets.importer import import_assets
 from app.db import Base
@@ -10,6 +6,9 @@ from app.llm.fake import FakeLLM
 from app.projects.jobs import InlineJobRunner
 from app.renderer.ffmpeg import ffmpeg_has_filter
 from app.voice.fake import FakeVoice
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 needs_libass = pytest.mark.skipif(not ffmpeg_has_filter("ass"), reason="local ffmpeg lacks libass; runs in Docker")
 
@@ -21,9 +20,18 @@ def client(mini_assets, tmp_path):
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as s:
         import_assets(s, mini_assets)
-    app = create_app(session_factory=factory, jobs=InlineJobRunner(),
-                     service_kwargs=dict(llm=FakeLLM(), voice=FakeVoice(), storage_dir=tmp_path / "storage",
-                                         assets_dir=mini_assets, render_preset="ultrafast", render_crf=30))
+    app = create_app(
+        session_factory=factory,
+        jobs=InlineJobRunner(),
+        service_kwargs=dict(
+            llm=FakeLLM(),
+            voice=FakeVoice(),
+            storage_dir=tmp_path / "storage",
+            assets_dir=mini_assets,
+            render_preset="ultrafast",
+            render_crf=30,
+        ),
+    )
     with TestClient(app) as c:
         yield c
 

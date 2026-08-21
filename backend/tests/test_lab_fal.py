@@ -1,13 +1,14 @@
 """fal.ai multi-model video provider (stubbed fal_client) + per-video provider selection."""
+
 from pathlib import Path
 
 import pytest
+from app.db import Base
+from app.lab.providers import FAL_MODELS, FakeImageGen, FakePlanner, FakeVideoGen, FalVideoGen, get_video_gen, list_video_providers
+from app.lab.service import LabService
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.db import Base
-from app.lab.providers import FAL_MODELS, FalVideoGen, get_video_gen, list_video_providers, FakeImageGen, FakePlanner, FakeVideoGen
-from app.lab.service import LabService
 from tests.conftest import make_clip
 
 
@@ -34,6 +35,7 @@ def fal_stub(monkeypatch, tmp_path):
     monkeypatch.setattr(P, "_download", lambda url, dst: Path(dst).write_bytes(Path(url.replace("file://", "")).read_bytes()))
     monkeypatch.setenv("FAL_KEY", "test")
     from app.config.settings import get_settings
+
     get_settings.cache_clear()
     yield calls
     get_settings.cache_clear()
@@ -45,12 +47,15 @@ def test_registry_has_expected_models():
     assert FAL_MODELS["seedance-2.0"]["max_seconds"] == 15 and FAL_MODELS["kling-3.0-std"]["max_seconds"] == 15
 
 
-@pytest.mark.parametrize("key,first_key,last_key,extra", [
-    ("minimax-h3", "image_url", "end_image_url", {"resolution": "2K", "duration": 8}),
-    ("seedance-2.0", "image_url", "end_image_url", {"aspect_ratio": "9:16", "duration": "8", "resolution": "720p"}),
-    ("seedance-2.0-fast", "image_url", "end_image_url", {"aspect_ratio": "9:16", "duration": "8"}),
-    ("kling-3.0-std", "start_image_url", "end_image_url", {"duration": "8"}),
-])
+@pytest.mark.parametrize(
+    "key,first_key,last_key,extra",
+    [
+        ("minimax-h3", "image_url", "end_image_url", {"resolution": "2K", "duration": 8}),
+        ("seedance-2.0", "image_url", "end_image_url", {"aspect_ratio": "9:16", "duration": "8", "resolution": "720p"}),
+        ("seedance-2.0-fast", "image_url", "end_image_url", {"aspect_ratio": "9:16", "duration": "8"}),
+        ("kling-3.0-std", "start_image_url", "end_image_url", {"duration": "8"}),
+    ],
+)
 def test_fal_animate_builds_arguments_and_normalizes(fal_stub, tmp_path, key, first_key, last_key, extra):
     first = make_clip(tmp_path / "a.mp4", seconds=1)  # any file works for the stub uploader
     last = make_clip(tmp_path / "b.mp4", seconds=1)
@@ -59,6 +64,7 @@ def test_fal_animate_builds_arguments_and_normalizes(fal_stub, tmp_path, key, fi
     out = gen.animate(first=first, last=last, prompt="slow push in", seconds=8, out_path=tmp_path / "seg.mp4")
     assert out.is_file()
     from app.assets.metadata import probe_video
+
     meta = probe_video(out)
     assert (meta.width, meta.height) == (1080, 1920)
     app_id, args = fal_stub["subscribe"][-1]
@@ -82,6 +88,7 @@ def test_get_video_gen_parses_fal_keys(fal_stub):
 def test_list_video_providers_reports_availability(monkeypatch):
     import app.lab.providers as P
     from app.config.settings import Settings
+
     monkeypatch.setattr(P, "get_settings", lambda: Settings(_env_file=None, google_api_key=None, fal_key=None))
     rows = {r["id"]: r for r in list_video_providers()}
     assert {"omni", "veo", "fake", "fal:minimax-h3", "fal:seedance-2.0"} <= set(rows)
@@ -94,12 +101,14 @@ def test_service_uses_per_video_provider(tmp_path):
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, expire_on_commit=False)()
-    svc = LabService(s, image=FakeImageGen(), planner=FakePlanner(), storage_dir=tmp_path / "storage",
-                     video_factory=lambda name: _named_fake(name))
+    svc = LabService(
+        s, image=FakeImageGen(), planner=FakePlanner(), storage_dir=tmp_path / "storage", video_factory=lambda name: _named_fake(name)
+    )
     v = svc.create(prompt="A quiet cafe morning", target_duration=20, video_provider="fake:alpha")
     assert v.video_provider == "fake:alpha" and v.video_model == "alpha-model"
     assert (v.n_segments, v.segment_seconds) == (2, 10)  # alpha max 10
-    svc.run_to_images(v.id); svc.animate(v.id)
+    svc.run_to_images(v.id)
+    svc.animate(v.id)
     assert svc.get(v.id).status == "DONE"
     c = svc.clone(v.id, video_provider="fake:beta")  # beta max 8 → 20 s → 3×7 → re-plan
     assert c.video_provider == "fake:beta" and c.video_model == "beta-model" and c.status == "PLANNING"

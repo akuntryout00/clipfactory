@@ -1,4 +1,5 @@
 """Technical metadata extraction via ffprobe."""
+
 from __future__ import annotations
 
 import json
@@ -36,8 +37,14 @@ def _parse_fps(rate: str) -> float:
 
 def ffprobe_json(path: Path) -> dict:
     cmd = [
-        get_settings().ffprobe_bin, "-v", "error", "-print_format", "json",
-        "-show_streams", "-show_format", str(path),
+        get_settings().ffprobe_bin,
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
+        str(path),
     ]
     out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
     return json.loads(out)

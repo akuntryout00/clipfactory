@@ -1,12 +1,11 @@
 import subprocess
 from pathlib import Path
 
+import app.models  # noqa: F401  (register tables on Base)
 import pytest
+from app.db import Base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
-
-from app.db import Base
-import app.models  # noqa: F401  (register tables on Base)
 
 
 def enable_sqlite_fk(engine) -> None:
@@ -37,9 +36,21 @@ def make_clip(path: Path, seconds: float = 3.0, size: str = "360x640", fps: int 
     path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-f", "lavfi", "-i", f"color=c={color}:s={size}:r={fps}:d={seconds}",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", str(path),
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c={color}:s={size}:r={fps}:d={seconds}",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-preset",
+            "ultrafast",
+            str(path),
         ],
         check=True,
     )
@@ -62,17 +73,20 @@ def mini_assets(tmp_path: Path) -> Path:
     colors = ["blue", "red", "green", "orange", "purple", "gray"]
     for i, (rel, (action, tags, shot, dur)) in enumerate(clips.items(), start=1):
         make_clip(root / rel, seconds=dur, color=colors[(i - 1) % len(colors)])
-        seed.append({
-            "id": f"asset_{i:03d}",
-            "file": rel,
-            "description": f"{action.replace('_', ' ')} clip",
-            "tags": tags,
-            "shot": shot,
-            "duration": dur,
-        })
+        seed.append(
+            {
+                "id": f"asset_{i:03d}",
+                "file": rel,
+                "description": f"{action.replace('_', ' ')} clip",
+                "tags": tags,
+                "shot": shot,
+                "duration": dur,
+            }
+        )
     (root / "_rejected").mkdir()
     make_clip(root / "_rejected" / "bad.mp4")
     (root / "_originals").mkdir()
     import json
+
     (root / "broll_database.json").write_text(json.dumps(seed))
     return root

@@ -23,10 +23,13 @@ def test_speech_text_drops_pov_prefix_and_expands_abbreviations():
 
 
 def test_script_for_speech_keeps_sections_aligned_with_word_ranges():
-    s = ScriptOutput(hook="POV: you opened your laptop.", sections=[
-        ScriptSection(type="hook", text="POV: you opened your laptop."),
-        ScriptSection(type="problem", text="Now twelve tabs are open."),
-    ])
+    s = ScriptOutput(
+        hook="POV: you opened your laptop.",
+        sections=[
+            ScriptSection(type="hook", text="POV: you opened your laptop."),
+            ScriptSection(type="problem", text="Now twelve tabs are open."),
+        ],
+    )
     spoken = s.for_speech()
     assert spoken.sections[0].text == "you opened your laptop."
     words = _words(spoken.full_text)
@@ -35,7 +38,9 @@ def test_script_for_speech_keeps_sections_aligned_with_word_ranges():
 
 def test_caption_chunks_never_exceed_two_lines_of_chars():
     style = load_caption_style("dynamic_center")
-    words = _words("When I'm stuck, staring at the screen mostly creates premium-grade procrastination. Walking removes the tabs, notifications, and pressure to look busy.")
+    words = _words(
+        "When I'm stuck, staring at the screen mostly creates premium-grade procrastination. Walking removes the tabs, notifications, and pressure to look busy."
+    )
     chunks = build_caption_chunks(words, style)
     limit = style.max_chars_per_line * style.max_lines
     for c in chunks:
@@ -51,6 +56,7 @@ def test_write_ass_no_line_longer_than_max_chars_unless_single_word_and_shrinks_
     chunks = build_caption_chunks(words, style)
     out = write_ass(chunks, [], style, tmp_path / "c.ass")
     import re
+
     for line in out.read_text().splitlines():
         if not line.startswith("Dialogue: 0"):
             continue

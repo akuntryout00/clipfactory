@@ -1,25 +1,27 @@
 import pytest
+from app.db import Base
+from app.lab.planning import segment_plan
+from app.lab.pricing import estimate_cost
+from app.lab.providers import FAL_MODELS, FakeImageGen, FakePlanner, FakeVideoGen, list_video_providers
+from app.lab.service import LabService
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.db import Base
-from app.lab.planning import segment_plan
-from app.lab.pricing import estimate_cost
-from app.lab.providers import FAL_MODELS, list_video_providers, FakeImageGen, FakePlanner, FakeVideoGen
-from app.lab.service import LabService
 
-
-@pytest.mark.parametrize("dur,max_seg,min_seg,expected", [
-    (3, 10, 2, (1, 3)),      # short video → one clip, two keyframes
-    (3, 10, 5, (1, 5)),      # provider min 5 s → clip stretched to 5 s
-    (8, 10, 4, (1, 8)),
-    (12, 10, 4, (2, 6)),
-    (20, 10, 4, (2, 10)),
-    (25, 10, 4, (3, 8)),
-    (25, 15, 4, (3, 8)),     # preferred granularity caps clips at 10 s even if the model allows 15
-    (15, 8, 4, (2, 8)),
-])
+@pytest.mark.parametrize(
+    "dur,max_seg,min_seg,expected",
+    [
+        (3, 10, 2, (1, 3)),  # short video → one clip, two keyframes
+        (3, 10, 5, (1, 5)),  # provider min 5 s → clip stretched to 5 s
+        (8, 10, 4, (1, 8)),
+        (12, 10, 4, (2, 6)),
+        (20, 10, 4, (2, 10)),
+        (25, 10, 4, (3, 8)),
+        (25, 15, 4, (3, 8)),  # preferred granularity caps clips at 10 s even if the model allows 15
+        (15, 8, 4, (2, 8)),
+    ],
+)
 def test_segment_plan_supports_single_segment_and_min_seconds(dur, max_seg, min_seg, expected):
     assert segment_plan(dur, max_seg=max_seg, min_seg=min_seg) == expected
 
@@ -66,13 +68,20 @@ def test_service_accepts_3_second_videos(tmp_path):
 def test_estimate_endpoint(tmp_path):
     from app.api.main import create_app
     from app.projects.jobs import InlineJobRunner
+
     engine = create_engine(f"sqlite:///{tmp_path / 'e.db'}", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
-    app = create_app(session_factory=factory, jobs=InlineJobRunner(), service_kwargs=dict(storage_dir=tmp_path / "storage"),
-                     lab_kwargs=dict(image=FakeImageGen(), planner=FakePlanner(), video=FakeVideoGen()))
+    app = create_app(
+        session_factory=factory,
+        jobs=InlineJobRunner(),
+        service_kwargs=dict(storage_dir=tmp_path / "storage"),
+        lab_kwargs=dict(image=FakeImageGen(), planner=FakePlanner(), video=FakeVideoGen()),
+    )
     with TestClient(app) as c:
         r = c.get("/lab/estimate", params={"provider": "fal:seedance-2.0", "duration": 12})
         assert r.status_code == 200 and r.json()["n_segments"] == 2 and r.json()["total"] > 0
         assert c.get("/lab/estimate", params={"provider": "fal:nope", "duration": 12}).status_code == 422
-        assert c.post("/lab/videos", json={"prompt": "A quick wave hello", "target_duration": 3, "video_provider": "fake"}).status_code == 201
+        assert (
+            c.post("/lab/videos", json={"prompt": "A quick wave hello", "target_duration": 3, "video_provider": "fake"}).status_code == 201
+        )

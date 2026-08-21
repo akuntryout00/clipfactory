@@ -1,19 +1,19 @@
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import random
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
-
-from app.assets.metadata import probe_video
 from app.assets.importer import import_assets, infer_semantics
+from app.assets.metadata import probe_video
 from app.assets.selector import (
-    freshness_multiplier,
-    relevance_score,
-    find_candidates,
     choose_segment,
     extract_query_tags,
+    find_candidates,
+    freshness_multiplier,
+    relevance_score,
 )
 from app.models import Asset
+
 from tests.conftest import make_clip
 
 
@@ -80,13 +80,15 @@ def test_infer_semantics_from_filename_and_description():
     [(None, 1.0), (0.2, 0.20), (2, 0.45), (5, 0.70), (10, 0.90)],
 )
 def test_freshness_multiplier_table(days_ago, expected):
-    now = datetime(2026, 8, 20, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 20, 12, tzinfo=UTC)
     last = None if days_ago is None else now - timedelta(days=days_ago)
     assert freshness_multiplier(last, now) == pytest.approx(expected)
 
 
 def test_relevance_score_prefers_matching_tags():
-    a = Asset(id="a", file="x", tags=["typing", "laptop", "desk"], action="typing", location="cafe", shot="close", description="typing on laptop")
+    a = Asset(
+        id="a", file="x", tags=["typing", "laptop", "desk"], action="typing", location="cafe", shot="close", description="typing on laptop"
+    )
     b = Asset(id="b", file="y", tags=["walking", "street"], action="walking", location="street", shot="wide", description="walking outside")
     q = ["typing", "laptop", "desk"]
     assert relevance_score(a, q) > relevance_score(b, q)
@@ -118,7 +120,7 @@ def test_find_candidates_ignores_unapproved(session, mini_assets):
 def test_find_candidates_penalises_recent_use(session, mini_assets):
     import_assets(session, mini_assets)
     a = session.get(Asset, "asset_001")
-    a.last_used_at = datetime.now(timezone.utc)
+    a.last_used_at = datetime.now(UTC)
     session.commit()
     cands = find_candidates(session, ["typing", "laptop", "desk", "coffee"], limit=2)
     # coffee clip (never used) should now outrank the freshly-used typing clip
@@ -140,7 +142,7 @@ def test_choose_segment_when_clip_too_short_returns_usable_start():
 def test_candidate_dict_flags_recently_used(session, mini_assets):
     import_assets(session, mini_assets)
     a = session.get(Asset, "asset_001")
-    a.last_used_at = datetime.now(timezone.utc)
+    a.last_used_at = datetime.now(UTC)
     session.commit()
     cands = {c.asset.id: c.as_dict() for c in find_candidates(session, ["typing", "coffee"], limit=10)}
     assert cands["asset_001"]["recently_used"] is True

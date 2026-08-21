@@ -1,4 +1,5 @@
 """Deterministic Video JSON → MP4 renderer (two stages, PRD §18/§19)."""
+
 from __future__ import annotations
 
 import random
@@ -9,7 +10,7 @@ from pathlib import Path
 
 from app.config.settings import get_settings
 from app.renderer.audio import build_audio_graph
-from app.renderer.filters import OUT_FPS, OUT_H, OUT_W, pick_look, scene_vf
+from app.renderer.filters import OUT_FPS, pick_look, scene_vf
 from app.renderer.subtitles import ass_filter_arg, build_ass_for_video
 from app.schemas.configs import CaptionStyleConfig
 from app.schemas.pipeline import VideoJSON
@@ -46,9 +47,33 @@ def _run(cmd: list[str], commands: list[list[str]]) -> None:
 
 def render_scene_clip(ffmpeg: str, src: Path, start: float, duration: float, out: Path, look, options: RenderOptions, commands) -> None:
     vf = scene_vf(look, duration)
-    cmd = [ffmpeg, "-y", "-loglevel", "error", "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(src),
-           "-an", "-vf", vf, "-r", str(OUT_FPS), "-c:v", "libx264", "-preset", options.preset, "-crf", str(max(options.crf - 2, 10)),
-           "-pix_fmt", "yuv420p", "-video_track_timescale", "15360"]
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-loglevel",
+        "error",
+        "-ss",
+        f"{start:.3f}",
+        "-t",
+        f"{duration:.3f}",
+        "-i",
+        str(src),
+        "-an",
+        "-vf",
+        vf,
+        "-r",
+        str(OUT_FPS),
+        "-c:v",
+        "libx264",
+        "-preset",
+        options.preset,
+        "-crf",
+        str(max(options.crf - 2, 10)),
+        "-pix_fmt",
+        "yuv420p",
+        "-video_track_timescale",
+        "15360",
+    ]
     if options.threads:
         cmd += ["-threads", str(options.threads)]
     cmd.append(str(out))
@@ -56,8 +81,16 @@ def render_scene_clip(ffmpeg: str, src: Path, start: float, duration: float, out
 
 
 def render_video(
-    video: VideoJSON, *, assets_dir: Path, voice_path: Path, out_path: Path, style: CaptionStyleConfig,
-    work_dir: Path, music_path: Path | None = None, options: RenderOptions | None = None, fonts_dir: Path | None = None,
+    video: VideoJSON,
+    *,
+    assets_dir: Path,
+    voice_path: Path,
+    out_path: Path,
+    style: CaptionStyleConfig,
+    work_dir: Path,
+    music_path: Path | None = None,
+    options: RenderOptions | None = None,
+    fonts_dir: Path | None = None,
 ) -> RenderResult:
     settings = get_settings()
     options = options or RenderOptions(threads=settings.render_threads)
@@ -96,16 +129,50 @@ def render_video(
     has_music = bool(music_path and Path(music_path).is_file())
     if has_music:
         inputs += ["-i", str(music_path)]
-    audio_graph, aout = build_audio_graph(has_music, voice_idx=1, music_idx=2 if has_music else None,
-                                          music_db=options.music_db, total_duration=total)
+    audio_graph, aout = build_audio_graph(
+        has_music, voice_idx=1, music_idx=2 if has_music else None, music_db=options.music_db, total_duration=total
+    )
     vf = f"[0:v]{ass_filter_arg(ass_path, fonts_dir)},format=yuv420p[vout]"
     filter_complex = f"{vf};{audio_graph}"
-    cmd = [ffmpeg, "-y", "-loglevel", "error", *inputs,
-           "-filter_complex", filter_complex, "-map", "[vout]", "-map", aout,
-           "-t", f"{total:.3f}", "-r", str(OUT_FPS),
-           "-c:v", "libx264", "-preset", options.preset, "-crf", str(options.crf), "-profile:v", "high", "-level", "4.1",
-           "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-           "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2"]
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-loglevel",
+        "error",
+        *inputs,
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        "[vout]",
+        "-map",
+        aout,
+        "-t",
+        f"{total:.3f}",
+        "-r",
+        str(OUT_FPS),
+        "-c:v",
+        "libx264",
+        "-preset",
+        options.preset,
+        "-crf",
+        str(options.crf),
+        "-profile:v",
+        "high",
+        "-level",
+        "4.1",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+    ]
     if options.threads:
         cmd += ["-threads", str(options.threads)]
     cmd.append(str(out_path))

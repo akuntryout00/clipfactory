@@ -1,4 +1,5 @@
 """Frame sampling for AI clip analysis."""
+
 from __future__ import annotations
 
 import subprocess
@@ -19,8 +20,23 @@ def extract_frames(video: Path, n: int = 6, width: int = 512) -> list[bytes]:
     with tempfile.TemporaryDirectory() as td:
         for i, t in enumerate(times):
             p = Path(td) / f"f{i:02d}.jpg"
-            cmd = [get_settings().ffmpeg_bin, "-y", "-loglevel", "error", "-ss", f"{t:.3f}", "-i", str(video), "-frames:v", "1",
-                   "-vf", f"scale={width}:-2", "-q:v", "5", str(p)]
+            cmd = [
+                get_settings().ffmpeg_bin,
+                "-y",
+                "-loglevel",
+                "error",
+                "-ss",
+                f"{t:.3f}",
+                "-i",
+                str(video),
+                "-frames:v",
+                "1",
+                "-vf",
+                f"scale={width}:-2",
+                "-q:v",
+                "5",
+                str(p),
+            ]
             subprocess.run(cmd, capture_output=True, text=True)
             if p.is_file():
                 out.append(p.read_bytes())

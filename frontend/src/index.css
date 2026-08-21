@@ -1,3 +1,4 @@
+@import "./fonts.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -132,7 +133,7 @@
     @apply font-sans;
     }
 }
-/* ---- Content Factory theme: cutting room ---- */
+/* ---- ClipFactory theme: cutting room ---- */
 .dark {
   --background: #121417;
   --foreground: #E8EAED;

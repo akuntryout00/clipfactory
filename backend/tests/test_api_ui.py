@@ -1,9 +1,6 @@
 """Endpoints added for the web UI: media streaming, thumbnails, artifacts, system, delete."""
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
+import pytest
 from app.api.main import create_app
 from app.assets.importer import import_assets
 from app.db import Base
@@ -11,6 +8,9 @@ from app.llm.fake import FakeLLM
 from app.projects.jobs import InlineJobRunner
 from app.renderer.ffmpeg import ffmpeg_has_filter
 from app.voice.fake import FakeVoice
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 needs_libass = pytest.mark.skipif(not ffmpeg_has_filter("ass"), reason="local ffmpeg lacks libass; runs in Docker")
 
@@ -19,14 +19,24 @@ needs_libass = pytest.mark.skipif(not ffmpeg_has_filter("ass"), reason="local ff
 def client(mini_assets, tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'api.db'}", future=True, connect_args={"check_same_thread": False})
     from tests.conftest import enable_sqlite_fk
+
     enable_sqlite_fk(engine)
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as s:
         import_assets(s, mini_assets)
-    app = create_app(session_factory=factory, jobs=InlineJobRunner(),
-                     service_kwargs=dict(llm=FakeLLM(), voice=FakeVoice(), storage_dir=tmp_path / "storage",
-                                         assets_dir=mini_assets, render_preset="ultrafast", render_crf=30))
+    app = create_app(
+        session_factory=factory,
+        jobs=InlineJobRunner(),
+        service_kwargs=dict(
+            llm=FakeLLM(),
+            voice=FakeVoice(),
+            storage_dir=tmp_path / "storage",
+            assets_dir=mini_assets,
+            render_preset="ultrafast",
+            render_crf=30,
+        ),
+    )
     with TestClient(app) as c:
         yield c
 
@@ -87,10 +97,14 @@ def test_artifacts_and_media_after_generate(client):
 
 def test_upload_single_video_creates_asset_file_and_row(client, mini_assets, tmp_path):
     from tests.conftest import make_clip
+
     clip = make_clip(tmp_path / "new.mp4", seconds=3)
     with clip.open("rb") as f:
-        r = client.post("/assets/upload", data={"category": "desk", "description": "hand closes notebook", "tags": "notebook, hand", "approved": "true"},
-                        files={"file": ("My Clip (1).mp4", f, "video/mp4")})
+        r = client.post(
+            "/assets/upload",
+            data={"category": "desk", "description": "hand closes notebook", "tags": "notebook, hand", "approved": "true"},
+            files={"file": ("My Clip (1).mp4", f, "video/mp4")},
+        )
     assert r.status_code == 201, r.text
     a = r.json()
     assert a["file"] == "desk/my_clip_1.mp4" and a["approved"] is True and a["duration"] > 2.5
@@ -104,10 +118,12 @@ def test_upload_single_video_creates_asset_file_and_row(client, mini_assets, tmp
 
 
 def test_upload_rejects_non_video_and_bad_category(client, tmp_path):
-    txt = tmp_path / "x.txt"; txt.write_text("hi")
+    txt = tmp_path / "x.txt"
+    txt.write_text("hi")
     with txt.open("rb") as f:
         assert client.post("/assets/upload", data={"category": "desk"}, files={"file": ("x.txt", f, "text/plain")}).status_code == 400
     from tests.conftest import make_clip
+
     clip = make_clip(tmp_path / "c.mp4", seconds=2)
     with clip.open("rb") as f:
         assert client.post("/assets/upload", data={"category": "../etc"}, files={"file": ("c.mp4", f, "video/mp4")}).status_code == 400
@@ -127,10 +143,14 @@ def test_delete_asset_removes_row_and_file(client, mini_assets):
 
 def test_upload_accepts_usable_range_and_clamps(client, tmp_path):
     from tests.conftest import make_clip
+
     clip = make_clip(tmp_path / "r.mp4", seconds=4)
     with clip.open("rb") as f:
-        r = client.post("/assets/upload", data={"category": "desk", "usable_start": "0.8", "usable_end": "9.9"},
-                        files={"file": ("r.mp4", f, "video/mp4")})
+        r = client.post(
+            "/assets/upload",
+            data={"category": "desk", "usable_start": "0.8", "usable_end": "9.9"},
+            files={"file": ("r.mp4", f, "video/mp4")},
+        )
     assert r.status_code == 201, r.text
     a = r.json()
     assert a["usable_start"] == 0.8 and abs(a["usable_end"] - a["duration"]) < 0.05  # end clamped to duration
@@ -139,6 +159,7 @@ def test_upload_accepts_usable_range_and_clamps(client, tmp_path):
 def test_delete_asset_that_was_used_in_a_render(client, mini_assets, tmp_path):
     # simulate usage bookkeeping (normally written after a successful render)
     from app.models import AssetUsage
+
     factory = client.app.state.session_factory
     with factory() as s:
         s.add(AssetUsage(asset_id="asset_003", project_id="proj_x", render_id="render_x"))
@@ -150,10 +171,14 @@ def test_delete_asset_that_was_used_in_a_render(client, mini_assets, tmp_path):
 
 def test_upload_auto_enriches_new_clip(client, tmp_path):
     from tests.conftest import make_clip
+
     clip = make_clip(tmp_path / "e.mp4", seconds=3)
     with clip.open("rb") as f:
-        r = client.post("/assets/upload", data={"category": "desk", "description": "hand closes a notebook", "tags": "notebook"},
-                        files={"file": ("e.mp4", f, "video/mp4")})
+        r = client.post(
+            "/assets/upload",
+            data={"category": "desk", "description": "hand closes a notebook", "tags": "notebook"},
+            files={"file": ("e.mp4", f, "video/mp4")},
+        )
     assert r.status_code == 201, r.text
     a = r.json()
     assert "notebook" in a["tags"] and "broll" in a["tags"]  # FakeLLM enrichment adds 'broll'
@@ -162,14 +187,18 @@ def test_upload_auto_enriches_new_clip(client, tmp_path):
 
 def test_upload_can_skip_enrich(client, tmp_path):
     from tests.conftest import make_clip
+
     clip = make_clip(tmp_path / "n.mp4", seconds=3)
     with clip.open("rb") as f:
-        r = client.post("/assets/upload?enrich=false", data={"category": "desk", "tags": "notebook"}, files={"file": ("n.mp4", f, "video/mp4")})
+        r = client.post(
+            "/assets/upload?enrich=false", data={"category": "desk", "tags": "notebook"}, files={"file": ("n.mp4", f, "video/mp4")}
+        )
     assert r.status_code == 201 and "broll" not in r.json()["tags"]
 
 
 def test_analyze_endpoint_returns_ai_fields_without_saving(client, mini_assets, tmp_path):
     from tests.conftest import make_clip
+
     clip = make_clip(tmp_path / "a.mp4", seconds=3)
     before = len(client.get("/assets").json())
     with clip.open("rb") as f:
@@ -185,9 +214,19 @@ def test_analyze_endpoint_returns_ai_fields_without_saving(client, mini_assets, 
 
 def test_upload_accepts_semantic_fields(client, tmp_path):
     from tests.conftest import make_clip
+
     clip = make_clip(tmp_path / "s.mp4", seconds=3)
     with clip.open("rb") as f:
-        r = client.post("/assets/upload?enrich=false", data={"category": "desk", "action": "writing_notebook", "location": "cafe", "shot": "close", "mood": "focused"},
-                        files={"file": ("s.mp4", f, "video/mp4")})
+        r = client.post(
+            "/assets/upload?enrich=false",
+            data={"category": "desk", "action": "writing_notebook", "location": "cafe", "shot": "close", "mood": "focused"},
+            files={"file": ("s.mp4", f, "video/mp4")},
+        )
     a = r.json()
-    assert r.status_code == 201 and a["action"] == "writing_notebook" and a["location"] == "cafe" and a["shot"] == "close" and a["mood"] == "focused"
+    assert (
+        r.status_code == 201
+        and a["action"] == "writing_notebook"
+        and a["location"] == "cafe"
+        and a["shot"] == "close"
+        and a["mood"] == "focused"
+    )

@@ -1,9 +1,10 @@
 from pathlib import Path
 
 from app.assets.frames import extract_frames
-from app.llm.fake import FakeLLM
 from app.llm import prompts
+from app.llm.fake import FakeLLM
 from app.schemas.pipeline import ClipAnalysis
+
 from tests.conftest import make_clip
 
 

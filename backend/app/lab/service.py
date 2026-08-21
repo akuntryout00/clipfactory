@@ -1,12 +1,13 @@
 """AI Lab orchestration: plan → images → animate → concat. Independent of the content-factory pipeline."""
+
 from __future__ import annotations
 
 import logging
 import shutil
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,9 +22,16 @@ MIN_TARGET, MAX_TARGET = 3.0, 25.0
 
 
 class LabService:
-    def __init__(self, session: Session, image: ImageGen | None = None, video: VideoGen | None = None, planner: Planner | None = None,
-                 storage_dir: Path | None = None, progress: Callable[[str, str], None] | None = None,
-                 video_factory: Callable[[str], VideoGen] | None = None):
+    def __init__(
+        self,
+        session: Session,
+        image: ImageGen | None = None,
+        video: VideoGen | None = None,
+        planner: Planner | None = None,
+        storage_dir: Path | None = None,
+        progress: Callable[[str, str], None] | None = None,
+        video_factory: Callable[[str], VideoGen] | None = None,
+    ):
         self.session = session
         self._image, self._video, self._planner = image, video, planner
         # per-video providers: video_factory(provider_id) → VideoGen (default get_video_gen); `video` (if given) is the fallback/default
@@ -122,11 +130,24 @@ class LabService:
         pid = video_provider or self.default_provider_id()
         vg = self.video_for(pid) if video_provider else self.video
         n, seg = segment_plan(target_duration, max_seg=getattr(vg, "max_seconds", 8), min_seg=getattr(vg, "min_seconds", 4))
-        v = LabVideo(prompt=prompt.strip(), style=style, target_duration=target_duration, n_segments=n, segment_seconds=seg,
-                     image_model=getattr(self.image, "model", None), video_model=getattr(vg, "model", None), video_provider=pid, status="PLANNING")
+        v = LabVideo(
+            prompt=prompt.strip(),
+            style=style,
+            target_duration=target_duration,
+            n_segments=n,
+            segment_seconds=seg,
+            image_model=getattr(self.image, "model", None),
+            video_model=getattr(vg, "model", None),
+            video_provider=pid,
+            status="PLANNING",
+        )
         self.session.add(v)
         self.session.commit()
-        self._log(v, "CREATED", f"Video created · {provider_label(pid)} · {n + 1} keyframes planned as {n} × {seg}s clips (target {target_duration:.0f}s)")
+        self._log(
+            v,
+            "CREATED",
+            f"Video created · {provider_label(pid)} · {n + 1} keyframes planned as {n} × {seg}s clips (target {target_duration:.0f}s)",
+        )
         return v
 
     # ---------- step 1: storyboard plan (LLM) ----------
@@ -150,7 +171,12 @@ class LabService:
             motion = plan.keyframes[i].motion_to_next if i < len(plan.keyframes) else None
             self.session.add(LabSegment(video_id=v.id, index=i, from_index=i, to_index=i + 1, prompt=motion))
         self.session.commit()
-        self._status(v, "PLANNED", f"Storyboard ready: {len(plan.keyframes)} keyframes — " + " · ".join(k.caption for k in plan.keyframes), level="success")
+        self._status(
+            v,
+            "PLANNED",
+            f"Storyboard ready: {len(plan.keyframes)} keyframes — " + " · ".join(k.caption for k in plan.keyframes),
+            level="success",
+        )
         return v
 
     def run_to_images(self, video_id: str) -> LabVideo:
@@ -184,7 +210,11 @@ class LabService:
             raise RuntimeError("plan the storyboard first")
         total = len(kfs)
         model = getattr(self.image, "model", "image model")
-        self._status(v, "GENERATING_IMAGES", f"Generating {total} keyframe images with {model}, one after another (each uses the previous frame as reference)…")
+        self._status(
+            v,
+            "GENERATING_IMAGES",
+            f"Generating {total} keyframe images with {model}, one after another (each uses the previous frame as reference)…",
+        )
         try:
             prev: Path | None = None
             for k in kfs:
@@ -238,7 +268,12 @@ class LabService:
                     s.status, s.video_path = "PENDING", None
             v.final_path = None
             all_done = all(x.status == "DONE" for x in self.keyframes(video_id))
-            self._status(v, "IMAGES_READY" if all_done else "PLANNED", "All keyframes ready — review them, then press Animate" if all_done else "Some keyframes still missing", level="success" if all_done else "info")
+            self._status(
+                v,
+                "IMAGES_READY" if all_done else "PLANNED",
+                "All keyframes ready — review them, then press Animate" if all_done else "Some keyframes still missing",
+                level="success" if all_done else "info",
+            )
         except Exception as exc:  # noqa: BLE001
             self._fail(v, "images", exc)
             raise
@@ -261,13 +296,21 @@ class LabService:
                     continue
                 s.status = "GENERATING"
                 self.session.commit()
-                self._log(v, "SEGMENT", f"Segment {s.index + 1}/{len(segs)} (frames {s.from_index}→{s.to_index}): generating with {v.video_model} (≈1–3 min)…")
+                self._log(
+                    v,
+                    "SEGMENT",
+                    f"Segment {s.index + 1}/{len(segs)} (frames {s.from_index}→{s.to_index}): generating with {v.video_model} (≈1–3 min)…",
+                )
                 t0 = time.time()
                 out = self.dir(v.id) / f"seg_{s.index:02d}.mp4"
                 first, last = Path(kfs[s.from_index].image_path), Path(kfs[s.to_index].image_path)
                 motion = s.prompt or "smooth natural motion between the two frames"
                 builder = getattr(vg, "build_prompt", None)
-                prompt = builder(motion, v.segment_seconds, v.style_guide or "") if builder else f"{motion}. {v.style_guide or ''} Vertical 9:16 video, cinematic, no text."
+                prompt = (
+                    builder(motion, v.segment_seconds, v.style_guide or "")
+                    if builder
+                    else f"{motion}. {v.style_guide or ''} Vertical 9:16 video, cinematic, no text."
+                )
                 try:
                     vg.animate(first=first, last=last, prompt=prompt, seconds=v.segment_seconds, out_path=out)
                 except Exception as exc:  # noqa: BLE001
@@ -279,7 +322,12 @@ class LabService:
                 s.provider_ref = getattr(vg, "last_ref", None)
                 s.version = (s.version or 0) + 1
                 self.session.commit()
-                self._log(v, "SEGMENT", f"Segment {s.index + 1}/{len(segs)} ready ({time.time() - t0:.0f}s, {s.duration:.1f}s clip)", level="success")
+                self._log(
+                    v,
+                    "SEGMENT",
+                    f"Segment {s.index + 1}/{len(segs)} ready ({time.time() - t0:.0f}s, {s.duration:.1f}s clip)",
+                    level="success",
+                )
             self._finalize(v)
         except Exception as exc:  # noqa: BLE001
             self._fail(v, "animate", exc)
@@ -312,7 +360,9 @@ class LabService:
         try:
             if edit_instruction:
                 if not seg.provider_ref or not hasattr(vg, "edit"):
-                    raise RuntimeError("this clip cannot be edited conversationally (no provider reference) — use a new motion prompt instead")
+                    raise RuntimeError(
+                        "this clip cannot be edited conversationally (no provider reference) — use a new motion prompt instead"
+                    )
                 self._log(v, "SEGMENT", f"Segment {index + 1}/{total}: editing clip with {v.video_model} — “{edit_instruction}”…")
                 vg.edit(ref=seg.provider_ref, instruction=edit_instruction, out_path=out)
                 seg.last_edit = edit_instruction
@@ -322,7 +372,11 @@ class LabService:
                 first, last = Path(kfs[seg.from_index].image_path), Path(kfs[seg.to_index].image_path)
                 motion = seg.prompt or "smooth natural motion between the two frames"
                 builder = getattr(vg, "build_prompt", None)
-                full = builder(motion, v.segment_seconds, v.style_guide or "") if builder else f"{motion}. {v.style_guide or ''} Vertical 9:16 video, cinematic, no text."
+                full = (
+                    builder(motion, v.segment_seconds, v.style_guide or "")
+                    if builder
+                    else f"{motion}. {v.style_guide or ''} Vertical 9:16 video, cinematic, no text."
+                )
                 self._log(v, "SEGMENT", f"Segment {index + 1}/{total}: re-animating with {v.video_model} — “{motion[:80]}”…")
                 vg.animate(first=first, last=last, prompt=full, seconds=v.segment_seconds, out_path=out)
                 seg.last_edit = None
@@ -356,9 +410,18 @@ class LabService:
             vg = self.video_for(pid)
         target = target_duration if target_duration is not None else src.target_duration
         n, seg = segment_plan(target, max_seg=getattr(vg, "max_seconds", 8), min_seg=getattr(vg, "min_seconds", 4))
-        c = LabVideo(prompt=src.prompt, style=src.style, target_duration=target, n_segments=n, segment_seconds=seg,
-                     image_model=src.image_model, video_model=getattr(vg, "model", None), video_provider=pid, status="PLANNING",
-                     meta={"cloned_from": src.id})
+        c = LabVideo(
+            prompt=src.prompt,
+            style=src.style,
+            target_duration=target,
+            n_segments=n,
+            segment_seconds=seg,
+            image_model=src.image_model,
+            video_model=getattr(vg, "model", None),
+            video_provider=pid,
+            status="PLANNING",
+            meta={"cloned_from": src.id},
+        )
         self.session.add(c)
         self.session.commit()
         self._log(c, "CREATED", f"Cloned from {src.id} · {provider_label(pid)} ({getattr(vg, 'model', '?')}) · {n} × {seg}s")
@@ -368,12 +431,23 @@ class LabService:
             for k in src_kfs:
                 dst = self.dir(c.id) / f"kf_{k.index:02d}_v1.png"
                 shutil.copyfile(k.image_path, dst)
-                self.session.add(LabKeyframe(video_id=c.id, index=k.index, prompt=k.prompt, caption=k.caption, image_path=str(dst), status="DONE", version=1))
+                self.session.add(
+                    LabKeyframe(
+                        video_id=c.id, index=k.index, prompt=k.prompt, caption=k.caption, image_path=str(dst), status="DONE", version=1
+                    )
+                )
             src_segs = {x.index: x for x in self.segments(src.id)}
             for i in range(n):
-                self.session.add(LabSegment(video_id=c.id, index=i, from_index=i, to_index=i + 1, prompt=src_segs[i].prompt if i in src_segs else None))
+                self.session.add(
+                    LabSegment(video_id=c.id, index=i, from_index=i, to_index=i + 1, prompt=src_segs[i].prompt if i in src_segs else None)
+                )
             self.session.commit()
-            self._status(c, "IMAGES_READY", f"Keyframes copied from {src.id} — press Animate to render with {getattr(vg, 'model', '?')}", level="success")
+            self._status(
+                c,
+                "IMAGES_READY",
+                f"Keyframes copied from {src.id} — press Animate to render with {getattr(vg, 'model', '?')}",
+                level="success",
+            )
         else:
             self._log(c, "PLANNING", f"Segment plan differs from the source ({n + 1} keyframes needed) — storyboard must be re-planned")
         return c
@@ -393,8 +467,12 @@ class LabService:
                 x.status, x.video_path, x.error, x.duration = "PENDING", None, None, None
             self.session.commit()
             has_images = bool(self.keyframes(video_id)) and all(k.status == "DONE" for k in self.keyframes(video_id))
-            self._status(v, "IMAGES_READY" if has_images else "PLANNED",
-                         f"Length set to {target_duration:.0f}s ({n} × {seg}s) — keyframes kept; press Animate to re-render", level="info")
+            self._status(
+                v,
+                "IMAGES_READY" if has_images else "PLANNED",
+                f"Length set to {target_duration:.0f}s ({n} × {seg}s) — keyframes kept; press Animate to re-render",
+                level="info",
+            )
         else:
             for k in self.keyframes(video_id):
                 self.session.delete(k)
@@ -402,14 +480,41 @@ class LabService:
                 self.session.delete(x)
             v.style_guide = None
             self.session.commit()
-            self._status(v, "PLANNING", f"Length set to {target_duration:.0f}s ({n} × {seg}s) — storyboard must be re-planned ({n + 1} keyframes)")
+            self._status(
+                v, "PLANNING", f"Length set to {target_duration:.0f}s ({n} × {seg}s) — storyboard must be re-planned ({n + 1} keyframes)"
+            )
         return v
 
     def _concat(self, parts: list[Path], out: Path) -> None:
         lst = out.parent / "concat.txt"
         lst.write_text("".join(f"file '{p.as_posix()}'\n" for p in parts))
-        cmd = [get_settings().ffmpeg_bin, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
-               "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", "-movflags", "+faststart", str(out)]
+        cmd = [
+            get_settings().ffmpeg_bin,
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(lst),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-r",
+            "30",
+            "-c:a",
+            "aac",
+            "-movflags",
+            "+faststart",
+            str(out),
+        ]
         subprocess.run(cmd, check=True, capture_output=True, text=True)
         lst.unlink(missing_ok=True)
 

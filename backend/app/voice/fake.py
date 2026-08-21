@@ -1,4 +1,5 @@
 """Offline voice provider: renders a quiet tone track of the estimated length + synthetic word timings."""
+
 from __future__ import annotations
 
 import json
@@ -22,9 +23,23 @@ class FakeVoice:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         # a soft 220 Hz beep every second so the mix is audible in tests / dry runs
         subprocess.run(
-            [get_settings().ffmpeg_bin, "-y", "-loglevel", "error", "-f", "lavfi",
-             "-i", f"sine=frequency=220:sample_rate=44100:duration={duration}",
-             "-af", "volume=0.15", "-c:a", "libmp3lame", "-q:a", "4", str(out_path)],
+            [
+                get_settings().ffmpeg_bin,
+                "-y",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                f"sine=frequency=220:sample_rate=44100:duration={duration}",
+                "-af",
+                "volume=0.15",
+                "-c:a",
+                "libmp3lame",
+                "-q:a",
+                "4",
+                str(out_path),
+            ],
             check=True,
         )
         words = synthetic_words(text, duration)

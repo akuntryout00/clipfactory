@@ -1,6 +1,6 @@
-from app.assets.importer import import_assets
-from app.assets.catalog import library_summary, candidate_limit_for
+from app.assets.catalog import candidate_limit_for, library_summary
 from app.assets.enrich import apply_enrichment
+from app.assets.importer import import_assets
 from app.llm.fake import FakeLLM
 from app.models import Asset
 from app.schemas.pipeline import AssetEnrichment, AssetEnrichOutput
@@ -23,15 +23,20 @@ def test_library_summary_lists_counts_and_descriptions(session, mini_assets):
 def test_fake_llm_enrich_and_apply_merges_tags_without_dropping_existing(session, mini_assets):
     import_assets(session, mini_assets)
     a = session.get(Asset, "asset_001")
-    out = AssetEnrichOutput(assets=[AssetEnrichment(asset_id="asset_001", tags=["keyboard", "focus"], action="typing_laptop",
-                                                    location="cafe", mood="focused", shot="close")])
+    out = AssetEnrichOutput(
+        assets=[
+            AssetEnrichment(
+                asset_id="asset_001", tags=["keyboard", "focus"], action="typing_laptop", location="cafe", mood="focused", shot="close"
+            )
+        ]
+    )
     n = apply_enrichment(session, out, overwrite=False)
     assert n == 1
     a = session.get(Asset, "asset_001")
     assert set(a.tags) >= {"typing", "laptop", "desk", "work", "keyboard", "focus"}
-    assert a.action == "typing"              # existing value kept without --overwrite
-    assert a.mood == "focused"               # was 'neutral' (default) → filled
-    n2 = apply_enrichment(session, out, overwrite=True)
+    assert a.action == "typing"  # existing value kept without --overwrite
+    assert a.mood == "focused"  # was 'neutral' (default) → filled
+    apply_enrichment(session, out, overwrite=True)
     assert session.get(Asset, "asset_001").action == "typing_laptop"
 
 

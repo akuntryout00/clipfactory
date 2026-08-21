@@ -1,4 +1,5 @@
 """Duration → segment plan. Each segment is one AI-animated clip between two keyframes."""
+
 from __future__ import annotations
 
 import math
