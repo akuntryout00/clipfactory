@@ -210,7 +210,7 @@ function ChangeSceneDialog({ project, order, onClose, onPick, busy }: { project:
   const { data, isLoading } = useQuery({ queryKey: ["suggest", project.id, order, project.plan_version], queryFn: () => api.suggestions(project.id, order!), enabled: order != null })
   return (
     <Dialog open={order != null} onOpenChange={o => { if (!o) onClose() }}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle className="font-heading">Change B-roll · scene {order}</DialogTitle>
           <DialogDescription>{scene?.intent} <span className="font-mono text-[11px]">(current {scene?.asset_id})</span></DialogDescription>

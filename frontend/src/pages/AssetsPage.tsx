@@ -76,7 +76,7 @@ function AssetDialog({ asset, onClose }: { asset: Asset | null; onClose: () => v
   const set = (k: keyof Asset, v: unknown) => setForm(f => ({ ...f, [k]: v }))
   return (
     <Dialog open={!!asset} onOpenChange={o => { if (!o) { setForm({}); onClose() } }}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-4xl">
         {a && (<>
           <DialogHeader><DialogTitle className="font-heading">{a.id} <span className="font-mono text-sm font-normal text-muted-foreground">{a.file}</span></DialogTitle></DialogHeader>
           <div className="grid gap-5 md:grid-cols-[220px_1fr]">
