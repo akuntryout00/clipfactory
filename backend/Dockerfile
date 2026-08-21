@@ -16,7 +16,7 @@ COPY backend/pyproject.toml backend/requirements.lock.txt ./
 RUN pip install -r requirements.lock.txt
 COPY backend/app ./app
 COPY backend/tests ./tests
-RUN pip install --no-deps -e ".[dev]"
+RUN pip install -e ".[dev]"
 
 # runtime dirs (mounted via compose in practice)
 RUN mkdir -p /app/storage /app/assets /app/configs
