@@ -18,6 +18,8 @@ needs_libass = pytest.mark.skipif(not ffmpeg_has_filter("ass"), reason="local ff
 @pytest.fixture()
 def client(mini_assets, tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'api.db'}", future=True, connect_args={"check_same_thread": False})
+    from tests.conftest import enable_sqlite_fk
+    enable_sqlite_fk(engine)
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as s:
@@ -132,3 +134,15 @@ def test_upload_accepts_usable_range_and_clamps(client, tmp_path):
     assert r.status_code == 201, r.text
     a = r.json()
     assert a["usable_start"] == 0.8 and abs(a["usable_end"] - a["duration"]) < 0.05  # end clamped to duration
+
+
+def test_delete_asset_that_was_used_in_a_render(client, mini_assets, tmp_path):
+    # simulate usage bookkeeping (normally written after a successful render)
+    from app.models import AssetUsage
+    factory = client.app.state.session_factory
+    with factory() as s:
+        s.add(AssetUsage(asset_id="asset_003", project_id="proj_x", render_id="render_x"))
+        s.commit()
+    r = client.delete("/assets/asset_003")
+    assert r.status_code == 204, r.text
+    assert client.get("/assets/search?q=trackpad").status_code == 200

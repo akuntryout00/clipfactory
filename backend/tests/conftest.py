@@ -9,9 +9,19 @@ from app.db import Base
 import app.models  # noqa: F401  (register tables on Base)
 
 
+def enable_sqlite_fk(engine) -> None:
+    """SQLite ignores FOREIGN KEY unless told otherwise — mirror Postgres behaviour in tests."""
+    from sqlalchemy import event
+
+    @event.listens_for(engine, "connect")
+    def _fk(dbapi_conn, _):  # noqa: ANN001
+        dbapi_conn.execute("PRAGMA foreign_keys=ON")
+
+
 @pytest.fixture()
 def session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    enable_sqlite_fk(engine)
     Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
     s = SessionLocal()

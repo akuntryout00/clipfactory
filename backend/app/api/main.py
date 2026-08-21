@@ -209,6 +209,11 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
         if a is None:
             raise HTTPException(404, "asset not found")
         path = assets_dir(request) / a.file
+        from sqlalchemy import delete as sa_delete
+
+        from app.models import AssetUsage
+
+        db.execute(sa_delete(AssetUsage).where(AssetUsage.asset_id == asset_id))  # usage history goes with the clip
         db.delete(a)
         db.commit()
         if not keep_file:
