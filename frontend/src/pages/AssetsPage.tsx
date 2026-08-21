@@ -87,7 +87,11 @@ function UploadDialog({ open, onClose, categories }: { open: boolean; onClose: (
       if (range) { fd.append("usable_start", String(range.s)); fd.append("usable_end", String(range.e)) }
       return api.uploadAsset(fd, setPct)
     },
-    onSuccess: a => { toast.success(`Added ${a.id} (${a.file})`); qc.invalidateQueries({ queryKey: ["assets"] }); reset(); onClose() },
+    onSuccess: a => {
+      if (a.enriched) toast.success(`Added ${a.id} · AI tags added (${a.tags.length} tags)`)
+      else toast.warning(`Added ${a.id} — AI enrichment skipped${a.enrichError ? `: ${a.enrichError}` : ""}`)
+      qc.invalidateQueries({ queryKey: ["assets"] }); reset(); onClose()
+    },
     onError: e => toast.error(e.message),
   })
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file])
@@ -132,9 +136,9 @@ function UploadDialog({ open, onClose, categories }: { open: boolean; onClose: (
             {up.isPending && <div className="h-1.5 overflow-hidden rounded bg-surface-2"><div className="h-full bg-primary transition-[width]" style={{ width: `${pct}%` }} /></div>}
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="ghost" onClick={() => { reset(); onClose() }}>Cancel</Button>
-              <Button type="submit" disabled={!file || !cat || up.isPending}>{up.isPending ? `Uploading ${pct}%` : "Upload clip"}</Button>
+              <Button type="submit" disabled={!file || !cat || up.isPending}>{up.isPending ? (pct < 100 ? `Uploading ${pct}%` : "Analyzing with AI…") : "Upload clip"}</Button>
             </div>
-            <p className="text-[11px] text-muted-foreground">Tip: run “Enrich with AI” afterwards to get richer tags from the description.</p>
+            <p className="text-[11px] text-muted-foreground">After upload the clip is enriched with AI automatically (tags, action, location, mood from your description) — a good description = better B-roll matching.</p>
           </div>
         </form>
       </DialogContent>

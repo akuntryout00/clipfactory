@@ -11,10 +11,13 @@ from app.schemas.pipeline import AssetEnrichOutput
 _DEFAULT_MOODS = {None, "", "neutral"}
 
 
-def enrich_library(session: Session, llm: LLMProvider, overwrite: bool = False, only_unapproved: bool = False) -> int:
+def enrich_library(session: Session, llm: LLMProvider, overwrite: bool = False, only_unapproved: bool = False,
+                   asset_ids: list[str] | None = None) -> int:
     q = select(Asset).order_by(Asset.id)
     if only_unapproved:
         q = q.where(Asset.approved.is_(False))
+    if asset_ids:
+        q = q.where(Asset.id.in_(asset_ids))
     rows = list(session.execute(q).scalars())
     if not rows:
         return 0

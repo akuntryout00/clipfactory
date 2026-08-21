@@ -37,12 +37,12 @@ export const api = {
   importAssets: () => req<{ created: number; updated: number; errors: string[] }>("/assets/import", { method: "POST" }),
   enrichAssets: () => req<{ enriched: number }>("/assets/enrich", { method: "POST" }),
   uploadAsset: (form: FormData, onProgress?: (pct: number) => void) =>
-    new Promise<Asset>((resolve, reject) => {
+    new Promise<Asset & { enriched?: boolean; enrichError?: string }>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       xhr.open("POST", `${API}/assets/upload`)
       xhr.upload.onprogress = e => { if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100)) }
       xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText))
+        if (xhr.status >= 200 && xhr.status < 300) resolve({ ...JSON.parse(xhr.responseText), enriched: xhr.getResponseHeader("X-Enriched") === "true", enrichError: xhr.getResponseHeader("X-Enrich-Error") ?? undefined })
         else { let d = xhr.statusText; try { d = JSON.parse(xhr.responseText).detail ?? d } catch { /* ignore */ } reject(new Error(typeof d === "string" ? d : JSON.stringify(d))) }
       }
       xhr.onerror = () => reject(new Error("upload failed"))

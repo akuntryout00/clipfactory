@@ -167,11 +167,12 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
         return {"enriched": enrich_library(db, llm, overwrite=overwrite)}
 
     @app.post("/assets/upload", response_model=AssetOut, status_code=201)
-    async def asset_upload(request: Request, file: UploadFile = File(...), category: str = Form(...),
+    async def asset_upload(request: Request, response: Response, file: UploadFile = File(...), category: str = Form(...),
                            description: str | None = Form(None), tags: str | None = Form(None), approved: bool = Form(False),
                            usable_start: float | None = Form(None), usable_end: float | None = Form(None),
-                           db: Session = Depends(get_db)):
-        """Add a single B-roll clip: saves under assets/<category>/ (never overwrites), probes it, creates the asset row."""
+                           enrich: bool = True, db: Session = Depends(get_db)):
+        """Add a single B-roll clip: saves under assets/<category>/ (never overwrites), probes it, creates the asset row,
+        then (by default) runs AI enrichment for just this clip so it is searchable right away."""
         import re
         import shutil
 
@@ -200,6 +201,19 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
         except Exception as exc:  # noqa: BLE001
             dest.unlink(missing_ok=True)
             raise HTTPException(400, f"could not read video: {exc}")
+        enriched = False
+        if enrich:
+            try:
+                from app.assets.enrich import enrich_library
+                from app.llm.base import get_llm
+
+                llm = request.app.state.service_kwargs.get("llm") or get_llm()
+                enriched = enrich_library(db, llm, asset_ids=[asset.id]) > 0
+                db.refresh(asset)
+            except Exception as exc:  # noqa: BLE001 — enrichment is best-effort; the upload itself succeeded
+                log.warning("auto-enrich failed for %s: %s", asset.id, exc)
+                response.headers["X-Enrich-Error"] = str(exc)[:200]
+        response.headers["X-Enriched"] = "true" if enriched else "false"
         return asset
 
     @app.delete("/assets/{asset_id}", status_code=204)

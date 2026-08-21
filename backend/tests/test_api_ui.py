@@ -146,3 +146,23 @@ def test_delete_asset_that_was_used_in_a_render(client, mini_assets, tmp_path):
     r = client.delete("/assets/asset_003")
     assert r.status_code == 204, r.text
     assert client.get("/assets/search?q=trackpad").status_code == 200
+
+
+def test_upload_auto_enriches_new_clip(client, tmp_path):
+    from tests.conftest import make_clip
+    clip = make_clip(tmp_path / "e.mp4", seconds=3)
+    with clip.open("rb") as f:
+        r = client.post("/assets/upload", data={"category": "desk", "description": "hand closes a notebook", "tags": "notebook"},
+                        files={"file": ("e.mp4", f, "video/mp4")})
+    assert r.status_code == 201, r.text
+    a = r.json()
+    assert "notebook" in a["tags"] and "broll" in a["tags"]  # FakeLLM enrichment adds 'broll'
+    assert r.headers.get("x-enriched") == "true"
+
+
+def test_upload_can_skip_enrich(client, tmp_path):
+    from tests.conftest import make_clip
+    clip = make_clip(tmp_path / "n.mp4", seconds=3)
+    with clip.open("rb") as f:
+        r = client.post("/assets/upload?enrich=false", data={"category": "desk", "tags": "notebook"}, files={"file": ("n.mp4", f, "video/mp4")})
+    assert r.status_code == 201 and "broll" not in r.json()["tags"]
