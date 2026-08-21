@@ -38,10 +38,15 @@ class SegmentOut(BaseModel):
     index: int; from_index: int; to_index: int; prompt: str | None; status: str; error: str | None; duration: float | None; video_url: str | None
 
 
+class EventOut(BaseModel):
+    stage: str; level: str; message: str; created_at: datetime
+
+
 class LabVideoOut(BaseModel):
     id: str; prompt: str; style: str | None; target_duration: float; n_segments: int; segment_seconds: int; style_guide: str | None
     status: str; stage_message: str | None; error: str | None; final_duration: float | None; image_model: str | None; video_model: str | None
     created_at: datetime; updated_at: datetime; keyframes: list[KeyframeOut] = []; segments: list[SegmentOut] = []; video_url: str | None = None
+    events: list[EventOut] = []
 
 
 def _db(request: Request):
@@ -61,10 +66,11 @@ def _out(v: LabVideo, svc: LabService) -> LabVideoOut:
                        image_url=f"/lab/videos/{v.id}/keyframes/{k.index}/image?v={k.version}" if k.image_path else None) for k in svc.keyframes(v.id)]
     segs = [SegmentOut(index=s.index, from_index=s.from_index, to_index=s.to_index, prompt=s.prompt, status=s.status, error=s.error, duration=s.duration,
                        video_url=f"/lab/videos/{v.id}/segments/{s.index}/video" if s.video_path else None) for s in svc.segments(v.id)]
+    evs = [EventOut(stage=e.stage, level=e.level, message=e.message, created_at=e.created_at) for e in svc.events(v.id)][-80:]
     return LabVideoOut(id=v.id, prompt=v.prompt, style=v.style, target_duration=v.target_duration, n_segments=v.n_segments, segment_seconds=v.segment_seconds,
                        style_guide=v.style_guide, status=v.status, stage_message=v.stage_message, error=v.error, final_duration=v.final_duration,
                        image_model=v.image_model, video_model=v.video_model, created_at=v.created_at, updated_at=v.updated_at,
-                       keyframes=kfs, segments=segs, video_url=f"/lab/videos/{v.id}/video" if v.final_path and v.status == "DONE" else None)
+                       keyframes=kfs, segments=segs, video_url=f"/lab/videos/{v.id}/video" if v.final_path and v.status == "DONE" else None, events=evs)
 
 
 def _job(request: Request, video_id: str, op: Callable[[LabService], None]):
@@ -87,14 +93,21 @@ def _job(request: Request, video_id: str, op: Callable[[LabService], None]):
 
 @router.post("/videos", response_model=LabVideoOut, status_code=201)
 def create(body: LabCreate, request: Request, db: Session = Depends(_db)):
+    """Create instantly, then plan + generate keyframes in the background (watch `status`/`events`)."""
     svc = _svc(request, db)
     try:
         v = svc.create(prompt=body.prompt, target_duration=body.target_duration, style=body.style)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(502, f"planning failed: {exc}")
-    return _out(v, svc)
+    out = _out(v, svc)
+    _job(request, v.id, lambda s: s.run_to_images(v.id))
+    return out
+
+
+@router.post("/videos/{video_id}/retry", status_code=202)
+def retry(video_id: str, request: Request, db: Session = Depends(_db)):
+    _get(video_id, request, db)
+    return _job(request, video_id, lambda s: s.retry(video_id))
 
 
 @router.get("/videos", response_model=list[LabVideoOut])

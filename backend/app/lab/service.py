@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -11,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
-from app.lab.models import LabKeyframe, LabSegment, LabVideo
+from app.lab.models import LabEvent, LabKeyframe, LabSegment, LabVideo
 from app.lab.planning import segment_plan
 from app.lab.providers import ImageGen, Planner, VideoGen, get_image_gen, get_planner, get_video_gen
 
@@ -66,19 +67,26 @@ class LabService:
     def segments(self, video_id: str) -> list[LabSegment]:
         return list(self.session.execute(select(LabSegment).where(LabSegment.video_id == video_id).order_by(LabSegment.index)).scalars())
 
-    def _status(self, v: LabVideo, status: str, message: str | None = None) -> None:
-        v.status, v.stage_message = status, message
+    def events(self, video_id: str) -> list[LabEvent]:
+        return list(self.session.execute(select(LabEvent).where(LabEvent.video_id == video_id).order_by(LabEvent.id)).scalars())
+
+    def _log(self, v: LabVideo, stage: str, message: str, level: str = "info") -> None:
+        self.session.add(LabEvent(video_id=v.id, stage=stage, level=level, message=message))
+        v.stage_message = message
+        self.session.commit()
+        self.progress(stage, message)
+
+    def _status(self, v: LabVideo, status: str, message: str | None = None, level: str = "info") -> None:
+        v.status = status
         if status != "FAILED":
             v.error = None
-        self.session.commit()
-        self.progress(status, message or "")
+        self._log(v, status, message or status.replace("_", " ").title(), level=level)
 
     def _fail(self, v: LabVideo, stage: str, exc: Exception) -> None:
         v.status, v.error = "FAILED", f"{stage}: {exc}"
-        self.session.commit()
-        self.progress("FAILED", v.error)
+        self._log(v, "FAILED", f"{stage} failed: {exc}", level="error")
 
-    # ---------- step 0: create + plan ----------
+    # ---------- step 0: create (instant) ----------
     def create(self, prompt: str, target_duration: float, style: str | None = None) -> LabVideo:
         if not prompt or len(prompt.strip()) < 5:
             raise ValueError("describe the video you want (at least a few words)")
@@ -86,21 +94,53 @@ class LabService:
             raise ValueError(f"target_duration must be {MIN_TARGET:.0f}-{MAX_TARGET:.0f} s")
         n, seg = segment_plan(target_duration, max_seg=getattr(self.video, "max_seconds", 8))
         v = LabVideo(prompt=prompt.strip(), style=style, target_duration=target_duration, n_segments=n, segment_seconds=seg,
-                     image_model=getattr(self.image, "model", None), video_model=getattr(self.video, "model", None))
+                     image_model=getattr(self.image, "model", None), video_model=getattr(self.video, "model", None), status="PLANNING")
         self.session.add(v)
         self.session.commit()
+        self._log(v, "CREATED", f"Video created · {n + 1} keyframes planned as {n} × {seg}s clips (target {target_duration:.0f}s)")
+        return v
+
+    # ---------- step 1: storyboard plan (LLM) ----------
+    def plan(self, video_id: str) -> LabVideo:
+        v = self.get(video_id)
+        n = v.n_segments
+        self._status(v, "PLANNING", f"Planning storyboard with {getattr(self.planner, 'name', 'llm')} ({n + 1} keyframes)…")
         try:
-            plan = self.planner.plan(prompt=v.prompt, n_keyframes=n + 1, segment_seconds=seg, style=style)
+            plan = self.planner.plan(prompt=v.prompt, n_keyframes=n + 1, segment_seconds=v.segment_seconds, style=v.style)
         except Exception as exc:  # noqa: BLE001
             self._fail(v, "plan", exc)
             raise
+        for old in self.keyframes(video_id):
+            self.session.delete(old)
+        for old in self.segments(video_id):
+            self.session.delete(old)
         v.style_guide = plan.style_guide
         for k in plan.keyframes:
             self.session.add(LabKeyframe(video_id=v.id, index=k.index, prompt=k.prompt, caption=k.caption))
         for i in range(n):
             motion = plan.keyframes[i].motion_to_next if i < len(plan.keyframes) else None
             self.session.add(LabSegment(video_id=v.id, index=i, from_index=i, to_index=i + 1, prompt=motion))
-        self._status(v, "PLANNED", f"{n + 1} keyframes planned")
+        self.session.commit()
+        self._status(v, "PLANNED", f"Storyboard ready: {len(plan.keyframes)} keyframes — " + " · ".join(k.caption for k in plan.keyframes), level="success")
+        return v
+
+    def run_to_images(self, video_id: str) -> LabVideo:
+        """Background job after create: plan → keyframe images."""
+        self.plan(video_id)
+        return self.generate_images(video_id)
+
+    def retry(self, video_id: str) -> LabVideo:
+        """Resume a FAILED video from the first incomplete step."""
+        v = self.get(video_id)
+        self._log(v, "RETRY", "Retrying from the last incomplete step…")
+        if not self.keyframes(video_id):
+            self.plan(video_id)
+        kfs = self.keyframes(video_id)
+        if any(k.status != "DONE" or not k.image_path for k in kfs):
+            return self.generate_images(video_id, only_missing=True)
+        if any(s.status != "DONE" for s in self.segments(video_id)) or not v.final_path:
+            return self.animate(video_id)
+        self._status(v, "DONE", "Nothing to retry — video is complete", level="success")
         return v
 
     # ---------- step 1: images ----------
@@ -109,32 +149,40 @@ class LabService:
 
     def generate_images(self, video_id: str, only_missing: bool = False) -> LabVideo:
         v = self.get(video_id)
-        self._status(v, "GENERATING_IMAGES", "Generating keyframe images...")
+        kfs = self.keyframes(video_id)
+        if not kfs:
+            raise RuntimeError("plan the storyboard first")
+        total = len(kfs)
+        self._status(v, "GENERATING_IMAGES", f"Generating {total} keyframe images with {getattr(self.image, 'model', 'image model')}…")
         try:
-            for k in self.keyframes(video_id):
+            for k in kfs:
                 if only_missing and k.status == "DONE" and k.image_path and Path(k.image_path).is_file():
                     continue
-                self._gen_keyframe(v, k)
-            self._status(v, "IMAGES_READY", "Keyframes ready — review, then animate")
+                self._gen_keyframe(v, k, total)
+            self._status(v, "IMAGES_READY", "All keyframes ready — review them, then press Animate", level="success")
         except Exception as exc:  # noqa: BLE001
             self._fail(v, "images", exc)
             raise
         return v
 
-    def _gen_keyframe(self, v: LabVideo, k: LabKeyframe) -> None:
+    def _gen_keyframe(self, v: LabVideo, k: LabKeyframe, total: int | None = None) -> None:
+        total = total or len(self.keyframes(v.id))
         k.status = "GENERATING"
         self.session.commit()
         k.version += 1
+        self._log(v, "IMAGE", f"Keyframe {k.index + 1}/{total} “{k.caption or ''}”: generating with {getattr(self.image, 'model', 'image model')} (≈1–2 min)…")
         out = self.dir(v.id) / f"kf_{k.index:02d}_v{k.version}.png"
+        t0 = time.time()
         try:
             self.image.generate(prompt=self._image_prompt(v, k), out_path=out)
         except Exception as exc:  # noqa: BLE001
             k.status, k.error = "FAILED", str(exc)
             self.session.commit()
+            self._log(v, "IMAGE", f"Keyframe {k.index + 1}/{total} failed: {exc}", level="error")
             raise
         k.image_path, k.status, k.error = str(out), "DONE", None
         self.session.commit()
-        self.progress("IMAGE", f"keyframe {k.index} ready")
+        self._log(v, "IMAGE", f"Keyframe {k.index + 1}/{total} ready ({time.time() - t0:.0f}s)", level="success")
 
     def regenerate_keyframe(self, video_id: str, index: int, prompt: str | None = None) -> LabVideo:
         v = self.get(video_id)
@@ -143,7 +191,7 @@ class LabService:
             raise KeyError(f"keyframe {index} not found")
         if prompt:
             k.prompt = prompt.strip()
-        self._status(v, "GENERATING_IMAGES", f"Regenerating keyframe {index}...")
+        self._status(v, "GENERATING_IMAGES", f"Regenerating keyframe {index + 1}…")
         try:
             self._gen_keyframe(v, k)
             # segments touching this frame must be re-animated
@@ -152,7 +200,7 @@ class LabService:
                     s.status, s.video_path = "PENDING", None
             v.final_path = None
             all_done = all(x.status == "DONE" for x in self.keyframes(video_id))
-            self._status(v, "IMAGES_READY" if all_done else "PLANNED", "Keyframes ready — review, then animate" if all_done else None)
+            self._status(v, "IMAGES_READY" if all_done else "PLANNED", "All keyframes ready — review them, then press Animate" if all_done else "Some keyframes still missing", level="success" if all_done else "info")
         except Exception as exc:  # noqa: BLE001
             self._fail(v, "images", exc)
             raise
@@ -165,15 +213,17 @@ class LabService:
         kfs = {k.index: k for k in self.keyframes(video_id)}
         if not kfs or any(k.status != "DONE" or not k.image_path for k in kfs.values()):
             raise RuntimeError("generate all keyframe images first")
-        self._status(v, "ANIMATING", "Animating segments...")
         v.video_model = getattr(self.video, "model", None) or v.video_model
+        segs = self.segments(video_id)
+        self._status(v, "ANIMATING", f"Animating {len(segs)} segments with {v.video_model} ({v.segment_seconds}s each)…")
         try:
-            segs = self.segments(video_id)
             for s in segs:
                 if not force and s.status == "DONE" and s.video_path and Path(s.video_path).is_file():
                     continue
                 s.status = "GENERATING"
                 self.session.commit()
+                self._log(v, "SEGMENT", f"Segment {s.index + 1}/{len(segs)} (frames {s.from_index}→{s.to_index}): generating with {v.video_model} (≈1–3 min)…")
+                t0 = time.time()
                 out = self.dir(v.id) / f"seg_{s.index:02d}.mp4"
                 first, last = Path(kfs[s.from_index].image_path), Path(kfs[s.to_index].image_path)
                 motion = s.prompt or "smooth natural motion between the two frames"
@@ -184,15 +234,17 @@ class LabService:
                 except Exception as exc:  # noqa: BLE001
                     s.status, s.error = "FAILED", str(exc)
                     self.session.commit()
+                    self._log(v, "SEGMENT", f"Segment {s.index + 1}/{len(segs)} failed: {exc}", level="error")
                     raise
-                s.video_path, s.duration, s.status, s.error = str(out), float(v.segment_seconds), "DONE", None
+                s.video_path, s.duration, s.status, s.error = str(out), _duration(out), "DONE", None
                 self.session.commit()
-                self.progress("SEGMENT", f"segment {s.index + 1}/{len(segs)} ready")
+                self._log(v, "SEGMENT", f"Segment {s.index + 1}/{len(segs)} ready ({time.time() - t0:.0f}s, {s.duration:.1f}s clip)", level="success")
+            self._log(v, "CONCAT", "Joining segments into the final 1080×1920 video…")
             final = self.dir(v.id) / "final.mp4"
             self._concat([Path(s.video_path) for s in self.segments(video_id)], final)
             v.final_path = str(final)
             v.final_duration = _duration(final)
-            self._status(v, "DONE", f"Ready: {final}")
+            self._status(v, "DONE", f"Video ready · {v.final_duration:.1f}s", level="success")
         except Exception as exc:  # noqa: BLE001
             self._fail(v, "animate", exc)
             raise

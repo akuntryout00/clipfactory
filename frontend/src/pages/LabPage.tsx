@@ -13,13 +13,13 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
-const RUNNING = new Set(["GENERATING_IMAGES", "ANIMATING"])
+const RUNNING = new Set(["PLANNING", "GENERATING_IMAGES", "ANIMATING"])
 const STATUS_STYLE: Record<string, string> = {
   DONE: "text-ready border-ready/30 bg-ready/10", FAILED: "text-fail border-fail/30 bg-fail/10",
   IMAGES_READY: "text-primary border-primary/40 bg-primary/10", PLANNED: "text-muted-foreground border-border",
 }
 const STATUS_LABEL: Record<string, string> = {
-  PLANNED: "planned", GENERATING_IMAGES: "making keyframes", IMAGES_READY: "review keyframes", ANIMATING: "animating", DONE: "ready", FAILED: "failed",
+  PLANNING: "planning", PLANNED: "planned", GENERATING_IMAGES: "making keyframes", IMAGES_READY: "review keyframes", ANIMATING: "animating", DONE: "ready", FAILED: "failed",
 }
 const title = (s: string) => (s.length > 50 ? s.slice(0, 50).trimEnd() + "…" : s)
 
@@ -97,12 +97,8 @@ function NewVideoDialog({ open, onClose }: { open: boolean; onClose: () => void 
   const [duration, setDuration] = useState(18)
   const segs = Math.max(2, Math.ceil(duration / 10)), segLen = Math.max(4, Math.min(10, Math.round(duration / segs)))
   const create = useMutation({
-    mutationFn: async () => {
-      const v = await lab.create({ prompt: prompt.trim(), target_duration: duration, style: style.trim() || null })
-      await lab.generateImages(v.id)
-      return v
-    },
-    onSuccess: v => { toast.success("Storyboard planned — generating keyframe images"); onClose(); nav(`/lab/${v.id}`) },
+    mutationFn: () => lab.create({ prompt: prompt.trim(), target_duration: duration, style: style.trim() || null }),
+    onSuccess: v => { toast.success("Started — planning the storyboard"); onClose(); nav(`/lab/${v.id}`) },
     onError: e => toast.error(e.message),
   })
   return (
@@ -131,7 +127,7 @@ function NewVideoDialog({ open, onClose }: { open: boolean; onClose: () => void 
           </div>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button type="submit" size="lg" disabled={prompt.trim().length < 5 || create.isPending}><FlaskConical className="size-4" /> {create.isPending ? "Planning…" : "Plan & generate keyframes"}</Button>
+            <Button type="submit" size="lg" disabled={prompt.trim().length < 5 || create.isPending}><FlaskConical className="size-4" /> {create.isPending ? "Starting…" : "Create video"}</Button>
           </div>
         </form>
       </DialogContent>

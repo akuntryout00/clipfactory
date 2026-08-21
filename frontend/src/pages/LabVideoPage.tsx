@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Download, Film, RefreshCw, Wand2 } from "lucide-react"
+import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Film, Loader2, RefreshCw, RotateCcw, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { fmtDate, lab } from "@/lib/api"
 import type { LabKeyframe, LabVideo } from "@/lib/types"
@@ -11,7 +11,28 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 
-const RUNNING = new Set(["GENERATING_IMAGES", "ANIMATING"])
+const RUNNING = new Set(["PLANNING", "GENERATING_IMAGES", "ANIMATING"])
+const STEPS = [
+  { key: "describe", label: "1 · Describe" },
+  { key: "plan", label: "2 · Storyboard (LLM)" },
+  { key: "images", label: "3 · Keyframes (OpenAI)" },
+  { key: "animate", label: "4 · Animate (Gemini Omni)" },
+  { key: "done", label: "5 · Video" },
+]
+function stepIndex(v: LabVideo): number {
+  if (v.status === "DONE") return 5
+  if (v.status === "ANIMATING") return 3
+  if (v.status === "IMAGES_READY") return 3
+  if (v.status === "GENERATING_IMAGES") return 2
+  if (v.status === "PLANNED") return 2
+  if (v.status === "PLANNING") return 1
+  if (v.status === "FAILED") { // where did it fail?
+    if (!v.keyframes.length) return 1
+    if (v.keyframes.some(k => k.status !== "DONE")) return 2
+    return 3
+  }
+  return 1
+}
 
 export default function LabVideoPage() {
   const { id = "" } = useParams()
@@ -22,60 +43,102 @@ export default function LabVideoPage() {
   const gen = useMutation({ mutationFn: (onlyMissing: boolean) => lab.generateImages(id, onlyMissing), onSuccess: () => { toast.success("Generating keyframes"); refresh() }, onError: e => toast.error(e.message) })
   const regen = useMutation({ mutationFn: ({ index, prompt }: { index: number; prompt?: string | null }) => lab.regenerate(id, index, prompt), onSuccess: () => { toast.success("Regenerating keyframe"); setEditing(null); refresh() }, onError: e => toast.error(e.message) })
   const anim = useMutation({ mutationFn: (force: boolean) => lab.animate(id, force), onSuccess: () => { toast.success("Animating — this takes a few minutes"); refresh() }, onError: e => toast.error(e.message) })
+  const retry = useMutation({ mutationFn: () => lab.retry(id), onSuccess: () => { toast.success("Retrying from the last incomplete step"); refresh() }, onError: e => toast.error(e.message) })
   if (isLoading || !v) return <div className="p-8 text-muted-foreground">Loading…</div>
   const running = RUNNING.has(v.status)
+  const failed = v.status === "FAILED"
   const allImages = v.keyframes.length > 0 && v.keyframes.every(k => k.status === "DONE")
-  const step = v.status === "DONE" ? 3 : allImages ? 2 : 1
+  const step = stepIndex(v)
+  const doneKf = v.keyframes.filter(k => k.status === "DONE").length
+  const doneSeg = v.segments.filter(s => s.status === "DONE").length
+  const progress = v.status === "GENERATING_IMAGES" && v.keyframes.length ? doneKf / v.keyframes.length
+    : v.status === "ANIMATING" && v.segments.length ? doneSeg / v.segments.length : null
+  const title = v.prompt.length > 50 ? v.prompt.slice(0, 50).trimEnd() + "…" : v.prompt
 
   return (
     <div>
       <PageHeader eyebrow={<Link to="/lab" className="inline-flex items-center gap-1 hover:text-foreground"><ArrowLeft className="size-3" /> AI Lab</Link> as unknown as string}
-        title={v.prompt.length > 90 ? v.prompt.slice(0, 90) + "…" : v.prompt}
+        title={title}
         actions={<>
-          <Button variant="outline" size="sm" disabled={running} onClick={() => gen.mutate(false)}><RefreshCw className="size-4" /> Regenerate all images</Button>
+          {failed && <Button size="sm" onClick={() => retry.mutate()}><RotateCcw className="size-4" /> Retry</Button>}
+          <Button variant="outline" size="sm" disabled={running || !v.keyframes.length} onClick={() => gen.mutate(false)}><RefreshCw className="size-4" /> Regenerate all images</Button>
           <Button size="sm" disabled={running || !allImages} onClick={() => anim.mutate(v.status === "DONE")}><Film className="size-4" /> {v.status === "DONE" ? "Animate again" : "Animate video"}</Button>
         </>}>
         <div className="mt-2 flex flex-wrap items-center gap-3 font-mono text-[11px] text-muted-foreground">
-          <span className={cn("rounded border px-1.5 py-0.5", v.status === "DONE" ? "border-ready/30 text-ready" : v.status === "FAILED" ? "border-fail/30 text-fail" : "border-border")}>{running && <span className="mr-1 inline-block size-1.5 animate-pulse rounded-full bg-primary" />}{v.status.replace(/_/g, " ")}</span>
+          <span title={v.prompt} className="max-w-[60ch] truncate">{v.prompt}</span>
           <span>{v.id}</span><span>{v.target_duration}s target · {v.n_segments} × {v.segment_seconds}s</span>
           <span>images {v.image_model} · video {v.video_model}</span><span>{fmtDate(v.created_at)}</span>
         </div>
-        {(v.stage_message || v.error) && <p className={cn("mt-1 text-xs", v.error ? "text-fail" : "text-muted-foreground")}>{v.error ?? v.stage_message}</p>}
       </PageHeader>
 
+      {/* status banner — always says what is happening right now */}
+      <div className={cn("mx-8 mt-5 flex items-start gap-3 rounded-lg border p-4",
+        failed ? "border-fail/50 bg-fail/10" : v.status === "DONE" ? "border-ready/40 bg-ready/10" : running ? "border-primary/50 bg-primary/5" : "border-border bg-card")}>
+        {failed ? <AlertTriangle className="mt-0.5 size-5 shrink-0 text-fail" /> : v.status === "DONE" ? <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-ready" />
+          : running ? <Loader2 className="mt-0.5 size-5 shrink-0 animate-spin text-primary" /> : <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" />}
+        <div className="min-w-0 flex-1">
+          <div className="font-heading text-sm font-semibold">
+            {v.status === "PLANNING" && "Planning the storyboard…"}
+            {v.status === "PLANNED" && "Storyboard ready — keyframes not generated yet"}
+            {v.status === "GENERATING_IMAGES" && `Generating keyframe images · ${doneKf}/${v.keyframes.length} done`}
+            {v.status === "IMAGES_READY" && "Keyframes ready — review them, then press “Animate video”"}
+            {v.status === "ANIMATING" && `Animating segments · ${doneSeg}/${v.segments.length} done`}
+            {v.status === "DONE" && `Video ready${v.final_duration ? ` · ${v.final_duration.toFixed(1)}s` : ""}`}
+            {failed && "Something failed"}
+          </div>
+          <div className={cn("mt-0.5 text-xs", failed ? "text-fail" : "text-muted-foreground")}>{failed ? v.error : v.stage_message}</div>
+          {progress != null && <div className="mt-2 h-1.5 overflow-hidden rounded bg-surface-2"><div className="h-full bg-primary transition-[width]" style={{ width: `${Math.round(progress * 100)}%` }} /></div>}
+          {running && <div className="mt-1 font-mono text-[10px] text-muted-foreground">Waiting for the AI provider — the page updates by itself every few seconds.</div>}
+        </div>
+        {v.status === "PLANNED" && !running && <Button size="sm" onClick={() => gen.mutate(false)}>Generate keyframes</Button>}
+      </div>
+
       {/* steps */}
-      <ol className="flex items-center gap-2 px-8 pt-5 font-mono text-[11px] uppercase tracking-wider">
-        {["1 · Describe", "2 · Keyframes (OpenAI)", "3 · Animate (Google)", "4 · Video"].map((label, i) => (
-          <li key={label} className="flex items-center gap-2">
-            <span className={cn("rounded-full border px-2 py-0.5", i < step ? "border-ready/40 text-ready" : i === step ? "border-primary text-primary" : "border-border text-muted-foreground")}>{label}</span>
-            {i < 3 && <span className="h-px w-6 bg-border" />}
-          </li>
-        ))}
+      <ol className="flex flex-wrap items-center gap-2 px-8 pt-4 font-mono text-[11px] uppercase tracking-wider">
+        {STEPS.map((s, i) => {
+          const state = failed && i === step ? "fail" : i < step ? "done" : i === step ? "active" : "todo"
+          return (
+            <li key={s.key} className="flex items-center gap-2">
+              <span className={cn("rounded-full border px-2 py-0.5", state === "done" && "border-ready/40 text-ready", state === "active" && "border-primary text-primary",
+                state === "fail" && "border-fail text-fail", state === "todo" && "border-border text-muted-foreground")}>
+                {state === "active" && running && <Loader2 className="mr-1 inline size-3 animate-spin" />}{s.label}
+              </span>
+              {i < STEPS.length - 1 && <span className="h-px w-5 bg-border" />}
+            </li>
+          )
+        })}
       </ol>
 
       <div className="grid gap-8 px-8 py-6 xl:grid-cols-[1fr_320px]">
         <div className="space-y-6">
           {v.style_guide && <p className="rounded-md border border-border bg-surface-2 p-3 text-xs text-muted-foreground"><span className="font-mono text-primary">style guide</span> {v.style_guide}</p>}
+
           <section>
-            <h2 className="mb-2 font-heading text-sm font-semibold">Keyframes · {v.keyframes.length}</h2>
+            <h2 className="mb-2 font-heading text-sm font-semibold">Keyframes · {v.keyframes.length || v.n_segments + 1}</h2>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {v.keyframes.map(k => (
+              {(v.keyframes.length ? v.keyframes : Array.from({ length: v.n_segments + 1 }, (_, i) => ({ index: i, prompt: "", caption: null, status: "PLANNING", error: null, version: 0, image_url: null }) as LabKeyframe)).map(k => (
                 <div key={k.index} className={cn("rounded-md border bg-card p-2", k.status === "FAILED" ? "border-fail/40" : "border-border")}>
                   <div className="relative aspect-[9/16] overflow-hidden rounded bg-surface-2">
                     {k.image_url ? <img src={`/api${k.image_url}`} alt="" className="h-full w-full object-cover" />
-                      : <div className="grid h-full place-items-center text-[11px] text-muted-foreground">{k.status === "GENERATING" ? <span className="animate-pulse text-primary">generating…</span> : k.status === "FAILED" ? <span className="text-fail px-2 text-center">{k.error}</span> : "pending"}</div>}
-                    <span className="absolute left-1 top-1 rounded bg-background/80 px-1 font-mono text-[10px]">{k.index === 0 ? "START" : k.index === v.keyframes.length - 1 ? "END" : `#${k.index}`}</span>
+                      : <div className="grid h-full place-items-center px-2 text-center text-[11px] text-muted-foreground">
+                        {k.status === "GENERATING" ? <span className="animate-pulse text-primary"><Loader2 className="mx-auto mb-1 size-4 animate-spin" />generating image…</span>
+                          : k.status === "FAILED" ? <span className="text-fail">{k.error}</span>
+                          : k.status === "PLANNING" ? <span className="animate-pulse">waiting for storyboard…</span>
+                          : "waiting"}
+                      </div>}
+                    <span className="absolute left-1 top-1 rounded bg-background/80 px-1 font-mono text-[10px]">{k.index === 0 ? "START" : k.index === v.n_segments ? "END" : `#${k.index}`}</span>
                     {k.version > 1 && <span className="absolute right-1 top-1 rounded bg-background/80 px-1 font-mono text-[10px]">v{k.version}</span>}
                   </div>
-                  <div className="mt-1 truncate text-xs" title={k.prompt}>{k.caption || k.prompt}</div>
+                  <div className="mt-1 truncate text-xs" title={k.prompt}>{k.caption || k.prompt || "—"}</div>
                   <div className="mt-1 flex gap-1">
-                    <Button size="sm" variant="outline" className="flex-1" disabled={running} onClick={() => setEditing(k)}><Wand2 className="size-3.5" /> Edit & redo</Button>
-                    <Button size="sm" variant="ghost" disabled={running} onClick={() => regen.mutate({ index: k.index })} title="Regenerate with the same prompt"><RefreshCw className="size-3.5" /></Button>
+                    <Button size="sm" variant="outline" className="flex-1" disabled={running || !k.prompt} onClick={() => setEditing(k)}><Wand2 className="size-3.5" /> Edit & redo</Button>
+                    <Button size="sm" variant="ghost" disabled={running || !k.prompt} onClick={() => regen.mutate({ index: k.index })} title="Regenerate with the same prompt"><RefreshCw className="size-3.5" /></Button>
                   </div>
                 </div>
               ))}
             </div>
           </section>
+
           {v.segments.some(s => s.status !== "PENDING") && (
             <section>
               <h2 className="mb-2 font-heading text-sm font-semibold">Segments · {v.segments.length} × {v.segment_seconds}s</h2>
@@ -92,12 +155,29 @@ export default function LabVideoPage() {
               </ul>
             </section>
           )}
+
+          <section>
+            <h2 className="mb-2 font-heading text-sm font-semibold">Activity</h2>
+            <ul className="max-h-72 space-y-1 overflow-auto rounded-md border border-border bg-surface-2 p-3 font-mono text-[11px]">
+              {[...v.events].reverse().map((e, i) => (
+                <li key={i} className={cn("flex gap-3", e.level === "error" && "text-fail", e.level === "success" && "text-ready", e.level === "warning" && "text-primary")}>
+                  <span className="shrink-0 text-muted-foreground">{new Date(e.created_at).toLocaleTimeString()}</span>
+                  <span className="w-24 shrink-0 uppercase text-muted-foreground">{e.stage}</span>
+                  <span className="break-words">{e.message}</span>
+                </li>
+              ))}
+              {v.events.length === 0 && <li className="text-muted-foreground">No activity yet.</li>}
+            </ul>
+          </section>
         </div>
 
         <div className="space-y-3">
           <div className="aspect-[9/16] w-full overflow-hidden rounded-lg border border-border bg-black">
             {v.video_url ? <video key={v.updated_at} src={lab.videoUrl(v.id)} controls playsInline className="h-full w-full" />
-              : <div className="grid h-full place-items-center p-6 text-center text-sm text-muted-foreground">{v.status === "ANIMATING" ? "Animating segments…" : allImages ? "Keyframes ready. Press “Animate video”." : "The video appears here after step 3."}</div>}
+              : <div className="grid h-full place-items-center p-6 text-center text-sm text-muted-foreground">
+                {v.status === "ANIMATING" ? <span><Loader2 className="mx-auto mb-2 size-5 animate-spin text-primary" />Animating segments…</span>
+                  : allImages ? "Keyframes ready. Press “Animate video”." : "The video appears here after step 4."}
+              </div>}
           </div>
           {v.video_url && <a href={lab.videoUrl(v.id)} download={`${v.id}.mp4`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}><Download className="size-4" /> Download MP4 {v.final_duration ? `· ${v.final_duration.toFixed(1)}s` : ""}</a>}
         </div>
@@ -115,7 +195,7 @@ function EditKeyframeDialog({ kf, video, onClose, onSubmit, busy }: { kf: LabKey
     <Dialog open={!!kf} onOpenChange={o => { if (!o) { setP(""); onClose() } }}>
       <DialogContent className="sm:max-w-3xl">
         {kf && (<>
-          <DialogHeader><DialogTitle className="font-heading">Keyframe {kf.index === 0 ? "START" : kf.index === video.keyframes.length - 1 ? "END" : `#${kf.index}`} — edit prompt & regenerate</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="font-heading">Keyframe {kf.index === 0 ? "START" : kf.index === video.n_segments ? "END" : `#${kf.index}`} — edit prompt & regenerate</DialogTitle></DialogHeader>
           <div className="grid gap-4 md:grid-cols-[220px_1fr]">
             <div className="aspect-[9/16] overflow-hidden rounded bg-surface-2">{kf.image_url && <img src={`/api${kf.image_url}`} alt="" className="h-full w-full object-cover" />}</div>
             <div className="space-y-3">

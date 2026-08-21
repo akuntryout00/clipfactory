@@ -46,18 +46,57 @@ def lab(tmp_path):
     s.close()
 
 
-def test_create_plans_keyframes(lab):
+def test_create_is_instant_and_plan_makes_keyframes(lab):
     svc, s = lab
     v = svc.create(prompt="A solo founder's morning: coffee, laptop, sunrise city walk", target_duration=18)
-    assert v.status == "PLANNED" and v.n_segments == 3 and v.segment_seconds == 6
+    assert v.status == "PLANNING" and v.n_segments == 3 and v.segment_seconds == 6
+    assert svc.keyframes(v.id) == []
+    svc.plan(v.id)
+    v = svc.get(v.id)
+    assert v.status == "PLANNED"
     kfs = svc.keyframes(v.id)
     assert len(kfs) == 4 and [k.index for k in kfs] == [0, 1, 2, 3]
     assert all(k.prompt for k in kfs) and v.style_guide
+    stages = [e.stage for e in svc.events(v.id)]
+    assert "PLANNING" in stages and "PLANNED" in stages
+
+
+def test_run_to_images_does_plan_and_images_and_logs_progress(lab):
+    svc, s = lab
+    v = svc.create(prompt="A quiet cafe morning", target_duration=15)
+    svc.run_to_images(v.id)
+    v = svc.get(v.id)
+    assert v.status == "IMAGES_READY"
+    msgs = [e.message for e in svc.events(v.id)]
+    assert any("Keyframe 1/3" in m for m in msgs) and any("Keyframe 3/3" in m for m in msgs)
+
+
+def test_retry_resumes_from_failed_stage(lab, monkeypatch):
+    svc, s = lab
+    v = svc.create(prompt="A quiet cafe morning", target_duration=15)
+    svc.plan(v.id)
+    calls = {"n": 0}
+    real = svc.image.generate
+    def flaky(*, prompt, out_path):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("image API down")
+        return real(prompt=prompt, out_path=out_path)
+    monkeypatch.setattr(svc.image, "generate", flaky)
+    with pytest.raises(RuntimeError):
+        svc.generate_images(v.id)
+    v = svc.get(v.id)
+    assert v.status == "FAILED" and "image API down" in v.error
+    assert [k.status for k in svc.keyframes(v.id)] == ["DONE", "FAILED", "PENDING"]
+    svc.retry(v.id)  # resumes: only missing images, no re-plan
+    v = svc.get(v.id)
+    assert v.status == "IMAGES_READY" and calls["n"] == 4  # 1 ok + 1 fail + 2 resumed
 
 
 def test_generate_images_then_animate_produces_916_mp4(lab):
     svc, s = lab
     v = svc.create(prompt="Morning routine", target_duration=15)
+    svc.plan(v.id)
     svc.generate_images(v.id)
     v = svc.get(v.id)
     assert v.status == "IMAGES_READY"
@@ -75,7 +114,7 @@ def test_generate_images_then_animate_produces_916_mp4(lab):
 def test_regenerate_single_keyframe_with_new_prompt(lab):
     svc, s = lab
     v = svc.create(prompt="A quiet cafe morning", target_duration=15)
-    svc.generate_images(v.id)
+    svc.run_to_images(v.id)
     k1 = svc.keyframes(v.id)[1]
     old_path, old_version = k1.image_path, k1.version
     svc.regenerate_keyframe(v.id, 1, prompt="a red door in the rain")
@@ -104,10 +143,11 @@ def test_lab_api_flow(tmp_path):
         r = c.post("/lab/videos", json={"prompt": "Cozy cafe morning, cinematic", "target_duration": 18})
         assert r.status_code == 201, r.text
         vid = r.json()["id"]
-        assert r.json()["status"] == "PLANNED" and len(r.json()["keyframes"]) == 4
-        assert c.post(f"/lab/videos/{vid}/generate-images").status_code == 202
+        # inline job runner → planning + images already ran by the time we look
         g = c.get(f"/lab/videos/{vid}").json()
-        assert g["status"] == "IMAGES_READY"
+        assert g["status"] == "IMAGES_READY" and len(g["keyframes"]) == 4
+        assert g["events"] and g["events"][0]["stage"] and all("created_at" in e for e in g["events"])
+        assert c.post(f"/lab/videos/{vid}/retry").status_code == 202
         assert c.get(f"/lab/videos/{vid}/keyframes/0/image").headers["content-type"] == "image/png"
         assert c.post(f"/lab/videos/{vid}/keyframes/1/regenerate", json={"prompt": "night version"}).status_code == 202
         assert c.get(f"/lab/videos/{vid}").json()["keyframes"][1]["prompt"] == "night version"
@@ -123,7 +163,7 @@ def test_lab_api_flow(tmp_path):
 def test_animate_force_redoes_finished_segments(lab):
     svc, s = lab
     v = svc.create(prompt="A quiet cafe morning", target_duration=15)
-    svc.generate_images(v.id)
+    svc.run_to_images(v.id)
     svc.animate(v.id)
     first_paths = [Path(x.video_path) for x in svc.segments(v.id)]
     mtimes = [p.stat().st_mtime_ns for p in first_paths]

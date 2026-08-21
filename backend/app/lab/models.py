@@ -27,7 +27,7 @@ class LabVideo(Base):
     n_segments: Mapped[int] = mapped_column(Integer)
     segment_seconds: Mapped[int] = mapped_column(Integer)
     style_guide: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String(32), default="PLANNED")  # PLANNED → GENERATING_IMAGES → IMAGES_READY → ANIMATING → DONE | FAILED
+    status: Mapped[str] = mapped_column(String(32), default="PLANNING")  # PLANNING → PLANNED → GENERATING_IMAGES → IMAGES_READY → ANIMATING → DONE | FAILED
     stage_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     final_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -40,6 +40,7 @@ class LabVideo(Base):
 
     keyframes: Mapped[list["LabKeyframe"]] = relationship(back_populates="video", cascade="all, delete-orphan", order_by="LabKeyframe.index")
     segments: Mapped[list["LabSegment"]] = relationship(back_populates="video", cascade="all, delete-orphan", order_by="LabSegment.index")
+    events: Mapped[list["LabEvent"]] = relationship(back_populates="video", cascade="all, delete-orphan", order_by="LabEvent.id")
 
 
 class LabKeyframe(Base):
@@ -73,3 +74,16 @@ class LabSegment(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
     video: Mapped[LabVideo] = relationship(back_populates="segments")
+
+
+class LabEvent(Base):
+    """Step-by-step activity log shown in the UI (what is happening, what failed and why)."""
+    __tablename__ = "lab_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    video_id: Mapped[str] = mapped_column(ForeignKey("lab_videos.id"))
+    stage: Mapped[str] = mapped_column(String(32))
+    level: Mapped[str] = mapped_column(String(16), default="info")  # info | success | warning | error
+    message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    video: Mapped[LabVideo] = relationship(back_populates="events")
