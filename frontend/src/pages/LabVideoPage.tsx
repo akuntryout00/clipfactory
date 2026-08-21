@@ -1,14 +1,14 @@
 import { useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Film, Loader2, RefreshCw, RotateCcw, Wand2 } from "lucide-react"
+import { AlertTriangle, ArrowLeft, CheckCircle2, Clock, Download, Film, Loader2, RefreshCw, RotateCcw, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { fmtDate, lab } from "@/lib/api"
-import type { LabKeyframe, LabVideo } from "@/lib/types"
+import type { LabKeyframe, LabSegment, LabVideo } from "@/lib/types"
 import { PageHeader } from "@/components/PageHeader"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 
 const RUNNING = new Set(["PLANNING", "GENERATING_IMAGES", "ANIMATING"])
@@ -39,7 +39,18 @@ export default function LabVideoPage() {
   const qc = useQueryClient()
   const { data: v, isLoading } = useQuery({ queryKey: ["lab", id], queryFn: () => lab.get(id), refetchInterval: q => (q.state.data && RUNNING.has(q.state.data.status) ? 2500 : false) })
   const [editing, setEditing] = useState<LabKeyframe | null>(null)
+  const [editingSeg, setEditingSeg] = useState<LabSegment | null>(null)
+  const [lengthOpen, setLengthOpen] = useState(false)
   const refresh = () => { qc.invalidateQueries({ queryKey: ["lab", id] }); qc.invalidateQueries({ queryKey: ["lab"] }) }
+  const redoSeg = useMutation({
+    mutationFn: ({ index, body }: { index: number; body: { prompt?: string | null; edit_instruction?: string | null } }) => lab.regenerateSegment(id, index, body),
+    onSuccess: () => { toast.success("Redoing segment — the final video is rebuilt when it's done"); setEditingSeg(null); refresh() }, onError: e => toast.error(e.message),
+  })
+  const setLen = useMutation({
+    mutationFn: (d: number) => lab.setDuration(id, d),
+    onSuccess: v2 => { toast.success(v2.status === "PLANNING" ? "Length changed — re-planning storyboard and keyframes" : "Length changed — re-animating"); setLengthOpen(false); refresh() },
+    onError: e => toast.error(e.message),
+  })
   const gen = useMutation({ mutationFn: (onlyMissing: boolean) => lab.generateImages(id, onlyMissing), onSuccess: () => { toast.success("Generating keyframes"); refresh() }, onError: e => toast.error(e.message) })
   const regen = useMutation({ mutationFn: ({ index, prompt }: { index: number; prompt?: string | null }) => lab.regenerate(id, index, prompt), onSuccess: () => { toast.success("Regenerating keyframe"); setEditing(null); refresh() }, onError: e => toast.error(e.message) })
   const anim = useMutation({ mutationFn: (force: boolean) => lab.animate(id, force), onSuccess: () => { toast.success("Animating — this takes a few minutes"); refresh() }, onError: e => toast.error(e.message) })
@@ -61,6 +72,7 @@ export default function LabVideoPage() {
         title={title}
         actions={<>
           {failed && <Button size="sm" onClick={() => retry.mutate()}><RotateCcw className="size-4" /> Retry</Button>}
+          <Button variant="outline" size="sm" disabled={running} onClick={() => setLengthOpen(true)}><Clock className="size-4" /> Change length</Button>
           <Button variant="outline" size="sm" disabled={running || !v.keyframes.length} onClick={() => gen.mutate(false)}><RefreshCw className="size-4" /> Regenerate all images</Button>
           <Button size="sm" disabled={running || !allImages} onClick={() => anim.mutate(v.status === "DONE")}><Film className="size-4" /> {v.status === "DONE" ? "Animate again" : "Animate video"}</Button>
         </>}>
@@ -151,10 +163,12 @@ export default function LabVideoPage() {
                     </div>
                     <p className="mt-1.5 line-clamp-2 break-words text-[11px] leading-snug text-muted-foreground" title={s.prompt ?? ""}>{s.prompt ?? "—"}</p>
                     <div className="mt-1.5 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
-                      <span>{s.duration ? `${s.duration.toFixed(1)}s` : `${v.segment_seconds}s`}</span>
+                      <span>{s.duration ? `${s.duration.toFixed(1)}s` : `${v.segment_seconds}s`}{s.version > 1 ? ` · v${s.version}` : ""}</span>
                       {s.video_url && <a className="text-primary underline" href={`/api${s.video_url}`} target="_blank" rel="noreferrer">open clip</a>}
                     </div>
+                    {s.last_edit && <p className="mt-1 line-clamp-1 text-[10px] text-primary" title={s.last_edit}>edit: {s.last_edit}</p>}
                     {s.error && <p className="mt-1 line-clamp-2 break-words text-[10px] text-fail" title={s.error}>{s.error}</p>}
+                    <Button size="sm" variant="outline" className="mt-2 w-full" disabled={running || !allImages} onClick={() => setEditingSeg(s)}><Wand2 className="size-3.5" /> Edit & redo</Button>
                   </div>
                 ))}
               </div>
@@ -189,7 +203,89 @@ export default function LabVideoPage() {
       </div>
 
       <EditKeyframeDialog kf={editing} video={v} onClose={() => setEditing(null)} onSubmit={(index, prompt) => regen.mutate({ index, prompt })} busy={regen.isPending} />
+      <EditSegmentDialog seg={editingSeg} onClose={() => setEditingSeg(null)} busy={redoSeg.isPending}
+        onSubmit={(index, body) => redoSeg.mutate({ index, body })} />
+      <ChangeLengthDialog open={lengthOpen} video={v} onClose={() => setLengthOpen(false)} busy={setLen.isPending} onSubmit={d => setLen.mutate(d)} />
     </div>
+  )
+}
+
+function EditSegmentDialog({ seg, onClose, onSubmit, busy }: { seg: LabSegment | null; onClose: () => void; busy: boolean
+  onSubmit: (index: number, body: { prompt?: string | null; edit_instruction?: string | null }) => void }) {
+  const [mode, setMode] = useState<"motion" | "edit">("motion")
+  const [p, setP] = useState("")
+  const [instr, setInstr] = useState("")
+  const cur = seg ? (p || seg.prompt || "") : ""
+  const canEdit = !!seg?.editable && !!seg?.video_url
+  return (
+    <Dialog open={!!seg} onOpenChange={o => { if (!o) { setP(""); setInstr(""); setMode("motion"); onClose() } }}>
+      <DialogContent className="sm:max-w-3xl">
+        {seg && (<>
+          <DialogHeader>
+            <DialogTitle className="font-heading">Segment #{seg.index + 1} · frames {seg.from_index}→{seg.to_index} — edit & redo</DialogTitle>
+            <DialogDescription>Only this clip is regenerated; the final video is rebuilt automatically afterwards.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+            <div className="aspect-[9/16] overflow-hidden rounded bg-black">
+              {seg.video_url ? <video src={`/api${seg.video_url}`} controls muted playsInline className="h-full w-full" /> : <div className="grid h-full place-items-center text-xs text-muted-foreground">no clip yet</div>}
+            </div>
+            <div className="space-y-3 text-sm">
+              <div className="flex gap-1 rounded-md border border-border p-1">
+                <button type="button" onClick={() => setMode("motion")} className={cn("flex-1 rounded px-2 py-1.5 text-xs", mode === "motion" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>Re-animate with a new motion prompt</button>
+                <button type="button" disabled={!canEdit} title={canEdit ? "" : "Available after the clip is generated with Gemini Omni"} onClick={() => setMode("edit")}
+                  className={cn("flex-1 rounded px-2 py-1.5 text-xs disabled:opacity-40", mode === "edit" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>Edit the existing clip (Omni)</button>
+              </div>
+              {mode === "motion" ? (<>
+                <Textarea rows={6} value={cur} onChange={e => setP(e.target.value)} placeholder="Slow push in; she opens the laptop and starts typing…" />
+                <p className="text-[11px] text-muted-foreground">Generated again from keyframe {seg.from_index} (start) and keyframe {seg.to_index} (end reference) with this motion description.</p>
+              </>) : (<>
+                <Textarea rows={6} value={instr} onChange={e => setInstr(e.target.value)} placeholder="Make the lighting more dramatic. Keep everything else the same." />
+                <p className="text-[11px] text-muted-foreground">Conversational edit of this exact clip. Simple instructions work best; add “Keep everything else the same” to preserve the rest.</p>
+              </>)}
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => { setP(""); setInstr(""); onClose() }}>Cancel</Button>
+                <Button disabled={busy || (mode === "motion" ? cur.trim().length < 5 : instr.trim().length < 3)}
+                  onClick={() => onSubmit(seg.index, mode === "motion" ? { prompt: cur.trim() } : { edit_instruction: instr.trim() })}>
+                  {mode === "motion" ? "Re-animate segment" : "Apply edit"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>)}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ChangeLengthDialog({ open, video, onClose, onSubmit, busy }: { open: boolean; video: LabVideo; onClose: () => void; onSubmit: (d: number) => void; busy: boolean }) {
+  const [d, setD] = useState(video.target_duration)
+  const maxSeg = Math.max(4, Math.round(video.target_duration / Math.max(1, video.n_segments)) <= 8 && video.video_model?.startsWith("veo") ? 8 : 10)
+  const segs = Math.max(2, Math.ceil(d / maxSeg)), segLen = Math.max(4, Math.min(maxSeg, Math.round(d / segs)))
+  const sameCount = segs === video.n_segments
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="font-heading">Change video length</DialogTitle>
+          <DialogDescription>Current: {video.target_duration}s · {video.n_segments} × {video.segment_seconds}s</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <div className="mb-1 flex justify-between text-xs"><span className="uppercase tracking-wider text-muted-foreground">New length</span><span className="font-mono">{d}s</span></div>
+            <input type="range" min={15} max={25} step={1} value={d} onChange={e => setD(Number(e.target.value))} className="scrub w-full" />
+            <div className="mt-1 font-mono text-[11px] text-muted-foreground">{segs + 1} keyframes · {segs} × {segLen}s clips</div>
+          </div>
+          <p className={cn("rounded-md border p-3 text-xs", sameCount ? "border-border text-muted-foreground" : "border-primary/40 bg-primary/5 text-foreground")}>
+            {sameCount ? "Segment count stays the same: your keyframes are kept and the clips are re-animated with the new length."
+              : "Segment count changes: the storyboard is re-planned and all keyframes are regenerated (you'll review them again before animating)."}
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button disabled={busy || d === video.target_duration} onClick={() => onSubmit(d)}>{sameCount ? "Apply & re-animate" : "Apply & re-plan"}</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

@@ -67,6 +67,9 @@ export const lab = {
   generateImages: (id: string, onlyMissing = false) => req<unknown>(`/lab/videos/${id}/generate-images${onlyMissing ? "?only_missing=true" : ""}`, { method: "POST" }),
   regenerate: (id: string, index: number, prompt?: string | null) => req<unknown>(`/lab/videos/${id}/keyframes/${index}/regenerate`, { method: "POST", body: JSON.stringify({ prompt: prompt ?? null }) }),
   retry: (id: string) => req<unknown>(`/lab/videos/${id}/retry`, { method: "POST" }),
+  regenerateSegment: (id: string, index: number, body: { prompt?: string | null; edit_instruction?: string | null }) =>
+    req<unknown>(`/lab/videos/${id}/segments/${index}/regenerate`, { method: "POST", body: JSON.stringify(body) }),
+  setDuration: (id: string, target_duration: number) => req<LabVideo>(`/lab/videos/${id}/duration`, { method: "PUT", body: JSON.stringify({ target_duration }) }),
   animate: (id: string, force = false) => req<unknown>(`/lab/videos/${id}/animate${force ? "?force=true" : ""}`, { method: "POST" }),
   delete: (id: string) => req<void>(`/lab/videos/${id}`, { method: "DELETE" }),
   imageUrl: (id: string, index: number, v: number) => `${API}/lab/videos/${id}/keyframes/${index}/image?v=${v}`,

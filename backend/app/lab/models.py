@@ -71,6 +71,9 @@ class LabSegment(Base):
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="PENDING")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_ref: Mapped[str | None] = mapped_column(String(256), nullable=True)  # e.g. Omni interaction id (for conversational edits)
+    last_edit: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
     video: Mapped[LabVideo] = relationship(back_populates="segments")

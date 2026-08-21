@@ -155,8 +155,13 @@ class VideoGen(Protocol):
     name: str
     model: str
     max_seconds: int  # longest clip this provider makes in one call
+    last_ref: str | None  # provider reference of the last generated clip (Omni interaction id), for conversational edits
 
     def animate(self, *, first: Path, last: Path, prompt: str, seconds: int, out_path: Path) -> Path: ...
+
+    def edit(self, *, ref: str, instruction: str, out_path: Path) -> Path:
+        """Conversational edit of a previously generated clip (raise NotImplementedError if unsupported)."""
+        ...
 
 
 class OmniVideoGen:
@@ -178,6 +183,7 @@ class OmniVideoGen:
             raise RuntimeError("GOOGLE_API_KEY is not set")
         self._client = genai.Client(api_key=s.google_api_key)
         self.model = s.google_video_model  # gemini-omni-flash-preview
+        self.last_ref: str | None = None
 
     @staticmethod
     def build_prompt(motion: str, seconds: int, style: str) -> str:
@@ -201,6 +207,20 @@ class OmniVideoGen:
             response_format={"type": "video", "aspect_ratio": "9:16", "delivery": "uri"},
             background=False, store=True,
         )
+        self.last_ref = getattr(it, "id", None)
+        return self._save_interaction_video(it, out_path)
+
+    def edit(self, *, ref: str, instruction: str, out_path: Path) -> Path:
+        """Stateful edit: new interaction chained to the previous one (official 'Stateful video editing')."""
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        it = self._client.interactions.create(
+            model=self.model, previous_interaction_id=ref, input=instruction,
+            response_format={"type": "video", "aspect_ratio": "9:16", "delivery": "uri"}, background=False, store=True,
+        )
+        self.last_ref = getattr(it, "id", None)
+        return self._save_interaction_video(it, out_path)
+
+    def _save_interaction_video(self, it, out_path: Path) -> Path:
         if it.status != "completed":
             raise RuntimeError(f"omni interaction {it.status}: {it.errors}")
         ov = it.output_video
@@ -239,6 +259,10 @@ class GoogleVideoGen:
 
     name = "veo"
     max_seconds = 8
+    last_ref = None
+
+    def edit(self, *, ref: str, instruction: str, out_path: Path) -> Path:
+        raise NotImplementedError("Veo does not support conversational clip editing — use 'redo with new motion' instead")
 
     def __init__(self):
         from google import genai
@@ -307,9 +331,27 @@ class FakeVideoGen:
     name = "fake"
     model = "fake-video"
     max_seconds = 8
+    last_ref: str | None = None
+    _counter = 0
+
+    def edit(self, *, ref: str, instruction: str, out_path: Path) -> Path:
+        """Pretend-edit: re-encode the existing clip with a tint so the file changes."""
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        src = out_path if out_path.is_file() else None
+        if src is None:
+            raise RuntimeError("nothing to edit")
+        tmp = out_path.with_suffix(".edit.mp4")
+        subprocess.run([get_settings().ffmpeg_bin, "-y", "-loglevel", "error", "-i", str(src), "-vf", "hue=s=0.3", "-c:v", "libx264", "-preset", "ultrafast",
+                        "-crf", "28", "-c:a", "copy", str(tmp)], check=True)
+        tmp.replace(out_path)
+        FakeVideoGen._counter += 1
+        self.last_ref = f"fake_interaction_{FakeVideoGen._counter}"
+        return out_path
 
     def animate(self, *, first: Path, last: Path, prompt: str, seconds: int, out_path: Path) -> Path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
+        FakeVideoGen._counter += 1
+        self.last_ref = f"fake_interaction_{FakeVideoGen._counter}"
         d = max(2, seconds)
         fc = (f"[0:v]scale={W}:{H},format=yuv420p,loop=loop={d*30}:size=1:start=0,setpts=N/30/TB[a];"
               f"[1:v]scale={W}:{H},format=yuv420p,loop=loop={d*30}:size=1:start=0,setpts=N/30/TB[b];"

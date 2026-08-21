@@ -30,12 +30,22 @@ class RegenBody(BaseModel):
     prompt: str | None = None
 
 
+class SegmentRedoBody(BaseModel):
+    prompt: str | None = Field(default=None, description="New motion prompt (re-animate from the two keyframes)")
+    edit_instruction: str | None = Field(default=None, description="Conversational edit of the existing clip (Omni)")
+
+
+class DurationBody(BaseModel):
+    target_duration: float = Field(ge=15, le=25)
+
+
 class KeyframeOut(BaseModel):
     index: int; prompt: str; caption: str | None; status: str; error: str | None; version: int; image_url: str | None
 
 
 class SegmentOut(BaseModel):
     index: int; from_index: int; to_index: int; prompt: str | None; status: str; error: str | None; duration: float | None; video_url: str | None
+    editable: bool = False; last_edit: str | None = None; version: int = 0
 
 
 class EventOut(BaseModel):
@@ -65,7 +75,8 @@ def _out(v: LabVideo, svc: LabService) -> LabVideoOut:
     kfs = [KeyframeOut(index=k.index, prompt=k.prompt, caption=k.caption, status=k.status, error=k.error, version=k.version,
                        image_url=f"/lab/videos/{v.id}/keyframes/{k.index}/image?v={k.version}" if k.image_path else None) for k in svc.keyframes(v.id)]
     segs = [SegmentOut(index=s.index, from_index=s.from_index, to_index=s.to_index, prompt=s.prompt, status=s.status, error=s.error, duration=s.duration,
-                       video_url=f"/lab/videos/{v.id}/segments/{s.index}/video" if s.video_path else None) for s in svc.segments(v.id)]
+                       video_url=f"/lab/videos/{v.id}/segments/{s.index}/video?v={s.version or 0}" if s.video_path else None,
+                       editable=bool(s.provider_ref), last_edit=s.last_edit, version=s.version or 0) for s in svc.segments(v.id)]
     evs = [EventOut(stage=e.stage, level=e.level, message=e.message, created_at=e.created_at) for e in svc.events(v.id)][-80:]
     return LabVideoOut(id=v.id, prompt=v.prompt, style=v.style, target_duration=v.target_duration, n_segments=v.n_segments, segment_seconds=v.segment_seconds,
                        style_guide=v.style_guide, status=v.status, stage_message=v.stage_message, error=v.error, final_duration=v.final_duration,
@@ -148,6 +159,36 @@ def animate(video_id: str, request: Request, db: Session = Depends(_db), force: 
     if any(k.status != "DONE" for k in svc.keyframes(video_id)):
         raise HTTPException(409, "generate all keyframe images first")
     return _job(request, video_id, lambda s: s.animate(video_id, force=force))
+
+
+@router.post("/videos/{video_id}/segments/{index}/regenerate", status_code=202)
+def regenerate_segment(video_id: str, index: int, body: SegmentRedoBody, request: Request, db: Session = Depends(_db)):
+    v, svc = _get(video_id, request, db)
+    if not any(s.index == index for s in svc.segments(video_id)):
+        raise HTTPException(404, "segment not found")
+    if not body.prompt and not body.edit_instruction:
+        raise HTTPException(422, "give a new motion prompt or an edit instruction")
+    return _job(request, video_id, lambda s: s.regenerate_segment(video_id, index, prompt=body.prompt, edit_instruction=body.edit_instruction))
+
+
+@router.put("/videos/{video_id}/duration", response_model=LabVideoOut)
+def set_duration(video_id: str, body: DurationBody, request: Request, db: Session = Depends(_db), rerender: bool = True):
+    """Change target length. Same segment count: keyframes kept and (if rerender) animation restarts; otherwise storyboard is re-planned
+    and keyframes regenerated in the background."""
+    v, svc = _get(video_id, request, db)
+    if request.app.state.lab_jobs.is_running(video_id):
+        raise HTTPException(409, "a job is running for this video")
+    try:
+        v = svc.set_duration(video_id, body.target_duration)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    out = _out(v, svc)
+    if rerender:
+        if v.status == "PLANNING":
+            _job(request, video_id, lambda s: s.run_to_images(video_id))
+        elif v.status == "IMAGES_READY":
+            _job(request, video_id, lambda s: s.animate(video_id, force=True))
+    return out
 
 
 @router.get("/videos/{video_id}/keyframes/{index}/image")

@@ -246,17 +246,96 @@ class LabService:
                     self._log(v, "SEGMENT", f"Segment {s.index + 1}/{len(segs)} failed: {exc}", level="error")
                     raise
                 s.video_path, s.duration, s.status, s.error = str(out), _duration(out), "DONE", None
+                s.provider_ref = getattr(self.video, "last_ref", None)
+                s.version = (s.version or 0) + 1
                 self.session.commit()
                 self._log(v, "SEGMENT", f"Segment {s.index + 1}/{len(segs)} ready ({time.time() - t0:.0f}s, {s.duration:.1f}s clip)", level="success")
-            self._log(v, "CONCAT", "Joining segments into the final 1080×1920 video…")
-            final = self.dir(v.id) / "final.mp4"
-            self._concat([Path(s.video_path) for s in self.segments(video_id)], final)
-            v.final_path = str(final)
-            v.final_duration = _duration(final)
-            self._status(v, "DONE", f"Video ready · {v.final_duration:.1f}s", level="success")
+            self._finalize(v)
         except Exception as exc:  # noqa: BLE001
             self._fail(v, "animate", exc)
             raise
+        return v
+
+    def _finalize(self, v: LabVideo) -> None:
+        self._log(v, "CONCAT", "Joining segments into the final 1080×1920 video…")
+        final = self.dir(v.id) / "final.mp4"
+        self._concat([Path(s.video_path) for s in self.segments(v.id)], final)
+        v.final_path = str(final)
+        v.final_duration = _duration(final)
+        self._status(v, "DONE", f"Video ready · {v.final_duration:.1f}s", level="success")
+
+    def regenerate_segment(self, video_id: str, index: int, prompt: str | None = None, edit_instruction: str | None = None) -> LabVideo:
+        """Redo one segment: either re-animate from its two keyframes with a (new) motion prompt, or apply a conversational
+        edit to the existing clip (Omni `previous_interaction_id`). Then rebuild the final video."""
+        v = self.get(video_id)
+        seg = next((x for x in self.segments(video_id) if x.index == index), None)
+        if seg is None:
+            raise KeyError(f"segment {index} not found")
+        kfs = {k.index: k for k in self.keyframes(video_id)}
+        total = len(self.segments(video_id))
+        out = self.dir(v.id) / f"seg_{seg.index:02d}.mp4"
+        self._status(v, "ANIMATING", f"Redoing segment {index + 1}/{total}…")
+        seg.status, seg.error = "GENERATING", None
+        self.session.commit()
+        t0 = time.time()
+        try:
+            if edit_instruction:
+                if not seg.provider_ref or not hasattr(self.video, "edit"):
+                    raise RuntimeError("this clip cannot be edited conversationally (no provider reference) — use a new motion prompt instead")
+                self._log(v, "SEGMENT", f"Segment {index + 1}/{total}: editing clip with {v.video_model} — “{edit_instruction}”…")
+                self.video.edit(ref=seg.provider_ref, instruction=edit_instruction, out_path=out)
+                seg.last_edit = edit_instruction
+            else:
+                if prompt:
+                    seg.prompt = prompt.strip()
+                first, last = Path(kfs[seg.from_index].image_path), Path(kfs[seg.to_index].image_path)
+                motion = seg.prompt or "smooth natural motion between the two frames"
+                builder = getattr(self.video, "build_prompt", None)
+                full = builder(motion, v.segment_seconds, v.style_guide or "") if builder else f"{motion}. {v.style_guide or ''} Vertical 9:16 video, cinematic, no text."
+                self._log(v, "SEGMENT", f"Segment {index + 1}/{total}: re-animating with {v.video_model} — “{motion[:80]}”…")
+                self.video.animate(first=first, last=last, prompt=full, seconds=v.segment_seconds, out_path=out)
+                seg.last_edit = None
+            seg.video_path, seg.duration, seg.status, seg.error = str(out), _duration(out), "DONE", None
+            seg.provider_ref = getattr(self.video, "last_ref", None) or seg.provider_ref
+            seg.version = (seg.version or 0) + 1
+            self.session.commit()
+            self._log(v, "SEGMENT", f"Segment {index + 1}/{total} ready ({time.time() - t0:.0f}s)", level="success")
+            if all(x.status == "DONE" and x.video_path for x in self.segments(video_id)):
+                self._finalize(v)
+            else:
+                self._status(v, "IMAGES_READY", "Segment updated — other segments still pending; press Animate")
+        except Exception as exc:  # noqa: BLE001
+            seg.status, seg.error = "FAILED", str(exc)
+            self.session.commit()
+            self._log(v, "SEGMENT", f"Segment {index + 1}/{total} failed: {exc}", level="error")
+            self._fail(v, "segment", exc)
+            raise
+        return v
+
+    def set_duration(self, video_id: str, target_duration: float) -> LabVideo:
+        """Change the target length. Same segment count → keep keyframes, re-animate; different → re-plan storyboard."""
+        v = self.get(video_id)
+        if not (MIN_TARGET <= target_duration <= MAX_TARGET):
+            raise ValueError(f"target_duration must be {MIN_TARGET:.0f}-{MAX_TARGET:.0f} s")
+        n, seg = segment_plan(target_duration, max_seg=getattr(self.video, "max_seconds", 8))
+        same_n = n == v.n_segments
+        v.target_duration, v.n_segments, v.segment_seconds = target_duration, n, seg
+        v.final_path, v.final_duration = None, None
+        if same_n:
+            for x in self.segments(video_id):
+                x.status, x.video_path, x.error, x.duration = "PENDING", None, None, None
+            self.session.commit()
+            has_images = bool(self.keyframes(video_id)) and all(k.status == "DONE" for k in self.keyframes(video_id))
+            self._status(v, "IMAGES_READY" if has_images else "PLANNED",
+                         f"Length set to {target_duration:.0f}s ({n} × {seg}s) — keyframes kept; press Animate to re-render", level="info")
+        else:
+            for k in self.keyframes(video_id):
+                self.session.delete(k)
+            for x in self.segments(video_id):
+                self.session.delete(x)
+            v.style_guide = None
+            self.session.commit()
+            self._status(v, "PLANNING", f"Length set to {target_duration:.0f}s ({n} × {seg}s) — storyboard must be re-planned ({n + 1} keyframes)")
         return v
 
     def _concat(self, parts: list[Path], out: Path) -> None:

@@ -41,6 +41,25 @@ def init_db() -> None:
     from app.lab import models as lab_models  # noqa: F401  (AI Lab tables, isolated module)
 
     Base.metadata.create_all(get_engine())
+    _ensure_columns(get_engine())
+
+
+def _ensure_columns(engine) -> None:
+    """Tiny forward-only migration: add columns that newer code expects to tables created by older versions."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    wanted = {
+        "lab_segments": {"provider_ref": "VARCHAR(256)", "last_edit": "TEXT", "version": "INTEGER DEFAULT 0"},
+    }
+    with engine.begin() as conn:
+        for table, cols in wanted.items():
+            if not insp.has_table(table):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for name, ddl in cols.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
 @contextmanager

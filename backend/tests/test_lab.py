@@ -210,3 +210,52 @@ def _unused_parallel_test(tmp_path):
     s = sessionmaker(bind=engine, expire_on_commit=False)()
 
     pass
+
+
+def test_regenerate_segment_with_new_prompt_reconcats(lab):
+    svc, s = lab
+    v = svc.create(prompt="A quiet cafe morning", target_duration=15)
+    svc.run_to_images(v.id); svc.animate(v.id)
+    seg0 = svc.segments(v.id)[0]
+    old_mtime = Path(seg0.video_path).stat().st_mtime_ns
+    final_mtime = Path(svc.get(v.id).final_path).stat().st_mtime_ns
+    import time; time.sleep(0.05)
+    svc.regenerate_segment(v.id, 0, prompt="whip pan to the door")
+    seg0 = svc.segments(v.id)[0]
+    assert seg0.prompt == "whip pan to the door" and Path(seg0.video_path).stat().st_mtime_ns != old_mtime
+    v = svc.get(v.id)
+    assert v.status == "DONE" and Path(v.final_path).stat().st_mtime_ns != final_mtime
+
+
+def test_edit_segment_uses_provider_edit_when_available(lab):
+    svc, s = lab
+    v = svc.create(prompt="A quiet cafe morning", target_duration=15)
+    svc.run_to_images(v.id); svc.animate(v.id)
+    seg1 = svc.segments(v.id)[1]
+    assert seg1.provider_ref  # fake provider hands back an id like a real interaction
+    svc.regenerate_segment(v.id, 1, edit_instruction="make it night time, keep everything else the same")
+    seg1 = svc.segments(v.id)[1]
+    assert seg1.status == "DONE" and "night" in (seg1.last_edit or "")
+    assert svc.get(v.id).status == "DONE"
+
+
+def test_set_duration_same_segment_count_keeps_keyframes(lab):
+    svc, s = lab
+    v = svc.create(prompt="A quiet cafe morning", target_duration=15)  # 2×8 (fake max 8)
+    svc.run_to_images(v.id); svc.animate(v.id)
+    kf_paths = [k.image_path for k in svc.keyframes(v.id)]
+    v = svc.set_duration(v.id, 16)  # still 2 segments
+    assert (v.n_segments, v.segment_seconds) == (2, 8)
+    assert [k.image_path for k in svc.keyframes(v.id)] == kf_paths
+    assert all(x.status == "PENDING" for x in svc.segments(v.id)) and v.status == "IMAGES_READY" and v.final_path is None
+
+
+def test_set_duration_new_segment_count_replans(lab):
+    svc, s = lab
+    v = svc.create(prompt="A quiet cafe morning", target_duration=15)  # 2 segments, 3 keyframes
+    svc.run_to_images(v.id)
+    v = svc.set_duration(v.id, 25)  # 4 segments, 5 keyframes
+    assert (v.n_segments, v.segment_seconds) == (4, 6) and v.status == "PLANNING"
+    assert svc.keyframes(v.id) == []
+    svc.run_to_images(v.id)
+    assert len(svc.keyframes(v.id)) == 5 and svc.get(v.id).status == "IMAGES_READY"
