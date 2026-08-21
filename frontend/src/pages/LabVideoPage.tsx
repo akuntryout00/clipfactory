@@ -109,8 +109,8 @@ export default function LabVideoPage() {
         })}
       </ol>
 
-      <div className="grid gap-8 px-8 py-6 xl:grid-cols-[1fr_320px]">
-        <div className="space-y-6">
+      <div className="grid min-w-0 gap-8 px-8 py-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-6">
           {v.style_guide && <p className="rounded-md border border-border bg-surface-2 p-3 text-xs text-muted-foreground"><span className="font-mono text-primary">style guide</span> {v.style_guide}</p>}
 
           <section>
@@ -140,30 +140,35 @@ export default function LabVideoPage() {
           </section>
 
           {v.segments.some(s => s.status !== "PENDING") && (
-            <section>
+            <section className="min-w-0">
               <h2 className="mb-2 font-heading text-sm font-semibold">Segments · {v.segments.length} × {v.segment_seconds}s</h2>
-              <ul className="divide-y divide-border rounded-md border border-border">
+              <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {v.segments.map(s => (
-                  <li key={s.index} className="flex items-center gap-3 p-2 text-xs">
-                    <span className="font-mono">#{s.index + 1} · frames {s.from_index}→{s.to_index}</span>
-                    <span className={cn("rounded border px-1.5 font-mono text-[10px]", s.status === "DONE" ? "border-ready/30 text-ready" : s.status === "FAILED" ? "border-fail/30 text-fail" : s.status === "GENERATING" ? "border-primary text-primary animate-pulse" : "border-border text-muted-foreground")}>{s.status}</span>
-                    <span className="min-w-0 flex-1 truncate text-muted-foreground">{s.prompt}</span>
-                    {s.error && <span className="text-fail">{s.error}</span>}
-                    {s.video_url && <a className="text-primary underline" href={`/api${s.video_url}`} target="_blank" rel="noreferrer">open</a>}
-                  </li>
+                  <div key={s.index} className={cn("min-w-0 overflow-hidden rounded-md border bg-card p-2.5", s.status === "FAILED" ? "border-fail/40" : s.status === "GENERATING" ? "border-primary/50" : "border-border")}>
+                    <div className="flex items-center justify-between gap-2 font-mono text-[11px]">
+                      <span>#{s.index + 1} · frames {s.from_index}→{s.to_index}</span>
+                      <span className={cn("rounded border px-1.5 py-0.5 text-[10px]", s.status === "DONE" ? "border-ready/30 text-ready" : s.status === "FAILED" ? "border-fail/30 text-fail" : s.status === "GENERATING" ? "animate-pulse border-primary text-primary" : "border-border text-muted-foreground")}>{s.status === "GENERATING" ? "animating" : s.status.toLowerCase()}</span>
+                    </div>
+                    <p className="mt-1.5 line-clamp-2 break-words text-[11px] leading-snug text-muted-foreground" title={s.prompt ?? ""}>{s.prompt ?? "—"}</p>
+                    <div className="mt-1.5 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
+                      <span>{s.duration ? `${s.duration.toFixed(1)}s` : `${v.segment_seconds}s`}</span>
+                      {s.video_url && <a className="text-primary underline" href={`/api${s.video_url}`} target="_blank" rel="noreferrer">open clip</a>}
+                    </div>
+                    {s.error && <p className="mt-1 line-clamp-2 break-words text-[10px] text-fail" title={s.error}>{s.error}</p>}
+                  </div>
                 ))}
-              </ul>
+              </div>
             </section>
           )}
 
           <section>
             <h2 className="mb-2 font-heading text-sm font-semibold">Activity</h2>
-            <ul className="max-h-72 space-y-1 overflow-auto rounded-md border border-border bg-surface-2 p-3 font-mono text-[11px]">
+            <ul className="max-h-72 min-w-0 space-y-1 overflow-y-auto overflow-x-hidden rounded-md border border-border bg-surface-2 p-3 font-mono text-[11px]">
               {[...v.events].reverse().map((e, i) => (
                 <li key={i} className={cn("flex gap-3", e.level === "error" && "text-fail", e.level === "success" && "text-ready", e.level === "warning" && "text-primary")}>
                   <span className="shrink-0 text-muted-foreground">{new Date(e.created_at).toLocaleTimeString()}</span>
-                  <span className="w-24 shrink-0 uppercase text-muted-foreground">{e.stage}</span>
-                  <span className="break-words">{e.message}</span>
+                  <span className="w-28 shrink-0 truncate uppercase text-muted-foreground" title={e.stage}>{e.stage.replace(/_/g, " ")}</span>
+                  <span className="min-w-0 break-words">{e.message}</span>
                 </li>
               ))}
               {v.events.length === 0 && <li className="text-muted-foreground">No activity yet.</li>}
