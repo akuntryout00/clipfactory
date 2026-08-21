@@ -259,3 +259,23 @@ def test_set_duration_new_segment_count_replans(lab):
     assert svc.keyframes(v.id) == []
     svc.run_to_images(v.id)
     assert len(svc.keyframes(v.id)) == 5 and svc.get(v.id).status == "IMAGES_READY"
+
+
+def test_clone_copies_keyframes_and_animates_with_other_provider(lab, tmp_path):
+    svc, s = lab
+    v = svc.create(prompt="A quiet cafe morning", target_duration=15)
+    svc.run_to_images(v.id); svc.animate(v.id)
+    other = FakeVideoGen(); other.model = "other-video-model"; other.max_seconds = 6
+    svc2 = LabService(s, image=svc.image, video=other, planner=svc.planner, storage_dir=svc.storage_dir.parent)
+    c = svc2.clone(v.id)
+    assert c.id != v.id and c.prompt == v.prompt and c.video_model == "other-video-model"
+    # other provider max 6 s → 15 s needs 3×5 (4 keyframes) ≠ 3 keyframes → keyframes can't be reused → must re-plan
+    assert (c.n_segments, c.segment_seconds) == (3, 5) and c.status == "PLANNING" and svc2.keyframes(c.id) == []
+    # same segment count → keyframes are copied and the clone is ready to animate
+    same = FakeVideoGen(); same.model = "same-count-model"
+    svc3 = LabService(s, image=svc.image, video=same, planner=svc.planner, storage_dir=svc.storage_dir.parent)
+    c2 = svc3.clone(v.id)
+    assert c2.status == "IMAGES_READY" and len(svc3.keyframes(c2.id)) == 3
+    assert all(Path(k.image_path).is_file() and str(c2.id) in k.image_path for k in svc3.keyframes(c2.id))
+    svc3.animate(c2.id)
+    assert svc3.get(c2.id).status == "DONE"

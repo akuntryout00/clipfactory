@@ -312,6 +312,34 @@ class LabService:
             raise
         return v
 
+    def clone(self, video_id: str, target_duration: float | None = None) -> LabVideo:
+        """Duplicate a video to compare providers/settings: same prompt/storyboard; keyframes are copied when the new
+        segment plan (this service's video provider) keeps the same count, otherwise the clone must be re-planned."""
+        src = self.get(video_id)
+        target = target_duration if target_duration is not None else src.target_duration
+        n, seg = segment_plan(target, max_seg=getattr(self.video, "max_seconds", 8))
+        c = LabVideo(prompt=src.prompt, style=src.style, target_duration=target, n_segments=n, segment_seconds=seg,
+                     image_model=src.image_model, video_model=getattr(self.video, "model", None), status="PLANNING",
+                     meta={"cloned_from": src.id})
+        self.session.add(c)
+        self.session.commit()
+        self._log(c, "CREATED", f"Cloned from {src.id} · provider {getattr(self.video, 'name', '?')} ({getattr(self.video, 'model', '?')}) · {n} × {seg}s")
+        src_kfs = self.keyframes(src.id)
+        if src_kfs and len(src_kfs) == n + 1 and all(k.status == "DONE" and k.image_path and Path(k.image_path).is_file() for k in src_kfs):
+            c.style_guide = src.style_guide
+            for k in src_kfs:
+                dst = self.dir(c.id) / f"kf_{k.index:02d}_v1.png"
+                shutil.copyfile(k.image_path, dst)
+                self.session.add(LabKeyframe(video_id=c.id, index=k.index, prompt=k.prompt, caption=k.caption, image_path=str(dst), status="DONE", version=1))
+            src_segs = {x.index: x for x in self.segments(src.id)}
+            for i in range(n):
+                self.session.add(LabSegment(video_id=c.id, index=i, from_index=i, to_index=i + 1, prompt=src_segs[i].prompt if i in src_segs else None))
+            self.session.commit()
+            self._status(c, "IMAGES_READY", f"Keyframes copied from {src.id} — press Animate to render with {getattr(self.video, 'model', '?')}", level="success")
+        else:
+            self._log(c, "PLANNING", f"Segment plan differs from the source ({n + 1} keyframes needed) — storyboard must be re-planned")
+        return c
+
     def set_duration(self, video_id: str, target_duration: float) -> LabVideo:
         """Change the target length. Same segment count → keep keyframes, re-animate; different → re-plan storyboard."""
         v = self.get(video_id)

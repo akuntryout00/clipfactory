@@ -67,8 +67,13 @@ def _db(request: Request):
         s.close()
 
 
-def _svc(request: Request, db: Session) -> LabService:
-    return LabService(db, **request.app.state.lab_kwargs)
+def _svc(request: Request, db: Session, provider: str | None = None) -> LabService:
+    kwargs = dict(request.app.state.lab_kwargs)
+    if provider:
+        from app.lab.providers import get_video_gen
+
+        kwargs["video"] = get_video_gen(provider)
+    return LabService(db, **kwargs)
 
 
 def _out(v: LabVideo, svc: LabService) -> LabVideoOut:
@@ -84,9 +89,13 @@ def _out(v: LabVideo, svc: LabService) -> LabVideoOut:
                        keyframes=kfs, segments=segs, video_url=f"/lab/videos/{v.id}/video" if v.final_path and v.status == "DONE" else None, events=evs)
 
 
-def _job(request: Request, video_id: str, op: Callable[[LabService], None]):
+def _job(request: Request, video_id: str, op: Callable[[LabService], None], provider: str | None = None):
     factory = request.app.state.session_factory
-    kwargs = request.app.state.lab_kwargs
+    kwargs = dict(request.app.state.lab_kwargs)
+    if provider:
+        from app.lab.providers import get_video_gen
+
+        kwargs["video"] = get_video_gen(provider)
 
     def run():
         with factory() as s:
@@ -154,11 +163,36 @@ def regenerate_keyframe(video_id: str, index: int, body: RegenBody, request: Req
 
 
 @router.post("/videos/{video_id}/animate", status_code=202)
-def animate(video_id: str, request: Request, db: Session = Depends(_db), force: bool = False):
+def animate(video_id: str, request: Request, db: Session = Depends(_db), force: bool = False, provider: str | None = None):
+    """provider = omni | veo | fake (optional override of LAB_VIDEO_PROVIDER for this run)."""
     v, svc = _get(video_id, request, db)
     if any(k.status != "DONE" for k in svc.keyframes(video_id)):
         raise HTTPException(409, "generate all keyframe images first")
-    return _job(request, video_id, lambda s: s.animate(video_id, force=force))
+    return _job(request, video_id, lambda s: s.animate(video_id, force=force), provider=provider)
+
+
+class CloneBody(BaseModel):
+    video_provider: str | None = Field(default=None, description="omni | veo | fake — provider for the clone (default: configured)")
+    target_duration: float | None = Field(default=None, ge=15, le=25)
+    animate: bool = True
+
+
+@router.post("/videos/{video_id}/clone", response_model=LabVideoOut, status_code=201)
+def clone(video_id: str, body: CloneBody, request: Request, db: Session = Depends(_db)):
+    """Duplicate a video (same storyboard + keyframes when possible) to compare providers or lengths side by side."""
+    _get(video_id, request, db)
+    try:
+        svc = _svc(request, db, body.video_provider)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(422, f"provider not available: {exc}")
+    c = svc.clone(video_id, target_duration=body.target_duration)
+    out = _out(c, svc)
+    if body.animate:
+        if c.status == "IMAGES_READY":
+            _job(request, c.id, lambda s: s.animate(c.id, force=True), provider=body.video_provider)
+        elif c.status == "PLANNING":
+            _job(request, c.id, lambda s: s.run_to_images(c.id), provider=body.video_provider)
+    return out
 
 
 @router.post("/videos/{video_id}/segments/{index}/regenerate", status_code=202)
