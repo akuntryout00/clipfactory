@@ -31,7 +31,8 @@ class Settings(BaseSettings):
     openai_image_size: str = "1024x1536"
     openai_image_quality: str = "high"
     google_api_key: str | None = None
-    google_video_model: str = "gemini-omni-flash"
+    google_video_model: str = "veo-3.1-fast-generate-preview"
+    google_person_generation: str = "allow_adult"  # Veo filters people from image inputs otherwise
     lab_planner: str = "openai"          # openai | fake
     lab_image_provider: str = "openai"   # openai | fake
     lab_video_provider: str = "google"   # google | fake

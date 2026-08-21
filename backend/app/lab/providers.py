@@ -166,10 +166,15 @@ class GoogleVideoGen:
         from google.genai import types
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
+        first_img = types.Image(image_bytes=first.read_bytes(), mime_type="image/png")
         cfg = types.GenerateVideosConfig(aspect_ratio="9:16", duration_seconds=seconds, number_of_videos=1,
+                                         person_generation=get_settings().google_person_generation,
                                          last_frame=types.Image(image_bytes=last.read_bytes(), mime_type="image/png"))
-        op = self._client.models.generate_videos(model=self.model, prompt=prompt,
-                                                 image=types.Image(image_bytes=first.read_bytes(), mime_type="image/png"), config=cfg)
+        try:  # new SDK signature
+            src = types.GenerateVideosSource(prompt=prompt, image=first_img)
+            op = self._client.models.generate_videos(model=self.model, source=src, config=cfg)
+        except (TypeError, AttributeError):  # older SDKs
+            op = self._client.models.generate_videos(model=self.model, prompt=prompt, image=first_img, config=cfg)
         t0 = time.time()
         while not getattr(op, "done", False):
             if time.time() - t0 > self.timeout_seconds:
@@ -180,7 +185,8 @@ class GoogleVideoGen:
             raise RuntimeError(f"video generation failed: {op.error}")
         videos = getattr(op.response, "generated_videos", None) or []
         if not videos:
-            raise RuntimeError("video generation returned no video")
+            reasons = getattr(op.response, "rai_media_filtered_reasons", None)
+            raise RuntimeError("video generation returned no video" + (f" (filtered: {reasons})" if reasons else ""))
         vid = videos[0].video
         data = getattr(vid, "video_bytes", None)
         if not data:
@@ -189,7 +195,7 @@ class GoogleVideoGen:
         if not data and getattr(vid, "uri", None):
             import httpx
 
-            data = httpx.get(vid.uri, params={"key": get_settings().google_api_key}, timeout=300).content
+            data = httpx.get(vid.uri, headers={"x-goog-api-key": get_settings().google_api_key or ""}, timeout=300, follow_redirects=True).content
         if not data:
             raise RuntimeError("could not download generated video")
         raw = out_path.with_suffix(".raw.mp4")

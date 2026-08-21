@@ -52,7 +52,7 @@ Dev: `make web-dev` (Vite on :3000 proxying to the api container on :8000).
 Fully AI-generated vertical videos, isolated from the content factory (own tables `lab_*`, own storage `storage/lab/`, own routes `/lab/*`, own UI section).
 1. **Describe** the video + length (15–25 s) + optional style → an LLM writes a storyboard: a *style guide* for character/wardrobe/palette consistency and N keyframes (N = segments + 1; segments are 4–8 s each).
 2. **Keyframes (OpenAI `gpt-image-2`)** — each keyframe is generated as a portrait image and cropped/scaled to exactly 1080×1920. Review; edit any prompt and regenerate a single frame (segments touching it are reset).
-3. **Animate (Google `gemini-omni-flash` via google-genai)** — every consecutive frame pair (first → last frame) becomes one 9:16 clip of `segment_seconds`; clips are normalised (1080×1920/30fps/h264) and concatenated into `final.mp4`.
+3. **Animate (Google Veo via google-genai, default `veo-3.1-fast-generate-preview`; `gemini-omni-*` models only support generateContent, not video)** — every consecutive frame pair (first → last frame) becomes one 9:16 clip of `segment_seconds`; clips are normalised (1080×1920/30fps/h264) and concatenated into `final.mp4`.
 Env: `GOOGLE_API_KEY`, `GOOGLE_VIDEO_MODEL`, `OPENAI_IMAGE_MODEL` (+ `LAB_*_PROVIDER=fake` for offline runs). API: `POST/GET /lab/videos`, `GET/DELETE /lab/videos/{id}`, `POST …/generate-images | keyframes/{i}/regenerate | animate`, `GET …/keyframes/{i}/image | segments/{i}/video | video`.
 
 ## REST API (PRD §47)
