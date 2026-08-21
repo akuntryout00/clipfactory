@@ -1,4 +1,4 @@
-import type { Artifacts, Asset, Candidate, ClipAnalysis, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
+import type { Artifacts, Asset, Candidate, ClipAnalysis, LabEstimate, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
 
 export const API = import.meta.env.VITE_API_BASE || "/api"
 
@@ -62,6 +62,7 @@ export const api = {
 
 export const lab = {
   providers: () => req<LabProvider[]>("/lab/providers"),
+  estimate: (provider: string, duration: number) => req<LabEstimate>(`/lab/estimate?provider=${encodeURIComponent(provider)}&duration=${duration}`),
   list: () => req<LabVideo[]>("/lab/videos"),
   get: (id: string) => req<LabVideo>(`/lab/videos/${id}`),
   create: (body: { prompt: string; target_duration: number; style?: string | null; video_provider?: string | null }) => req<LabVideo>("/lab/videos", { method: "POST", body: JSON.stringify(body) }),

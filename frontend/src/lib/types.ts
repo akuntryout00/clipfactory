@@ -82,7 +82,8 @@ export interface ClipAnalysis {
 // ---- AI Lab (isolated module) ----
 export interface LabKeyframe { index: number; prompt: string; caption: string | null; status: string; error: string | null; version: number; image_url: string | null }
 export interface LabSegment { index: number; from_index: number; to_index: number; prompt: string | null; status: string; error: string | null; duration: number | null; video_url: string | null; editable: boolean; last_edit: string | null; version: number }
-export interface LabProvider { id: string; label: string; model: string; max_seconds: number; supports_edit: boolean; price_hint: string | null; note: string | null; available: boolean; needs: string | null }
+export interface LabProvider { id: string; label: string; vendor: string; model: string; max_seconds: number; min_seconds: number; supports_edit: boolean; first_last: boolean; audio: boolean; price_hint: string | null; price_per_second: number; note: string | null; available: boolean; needs: string | null }
+export interface LabEstimate { provider: string; label: string; target_duration: number; n_segments: number; segment_seconds: number; video_seconds: number; keyframes: number; price_per_second: number; video_cost: number; image_cost: number; per_image: number; image_quality: string; planner_cost: number; total: number; note: string }
 export interface LabEvent { stage: string; level: "info" | "success" | "warning" | "error" | string; message: string; created_at: string }
 export interface LabVideo {
   id: string; prompt: string; style: string | null; target_duration: number; n_segments: number; segment_seconds: number; style_guide: string | null

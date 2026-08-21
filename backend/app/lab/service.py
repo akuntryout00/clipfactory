@@ -17,7 +17,7 @@ from app.lab.planning import segment_plan
 from app.lab.providers import ImageGen, Planner, VideoGen, get_image_gen, get_planner, get_video_gen, provider_label
 
 log = logging.getLogger(__name__)
-MIN_TARGET, MAX_TARGET = 15.0, 25.0
+MIN_TARGET, MAX_TARGET = 3.0, 25.0
 
 
 class LabService:
@@ -121,7 +121,7 @@ class LabService:
             raise ValueError(f"target_duration must be {MIN_TARGET:.0f}-{MAX_TARGET:.0f} s")
         pid = video_provider or self.default_provider_id()
         vg = self.video_for(pid) if video_provider else self.video
-        n, seg = segment_plan(target_duration, max_seg=getattr(vg, "max_seconds", 8))
+        n, seg = segment_plan(target_duration, max_seg=getattr(vg, "max_seconds", 8), min_seg=getattr(vg, "min_seconds", 4))
         v = LabVideo(prompt=prompt.strip(), style=style, target_duration=target_duration, n_segments=n, segment_seconds=seg,
                      image_model=getattr(self.image, "model", None), video_model=getattr(vg, "model", None), video_provider=pid, status="PLANNING")
         self.session.add(v)
@@ -355,7 +355,7 @@ class LabService:
             pid = src.video_provider or self.default_provider_id()
             vg = self.video_for(pid)
         target = target_duration if target_duration is not None else src.target_duration
-        n, seg = segment_plan(target, max_seg=getattr(vg, "max_seconds", 8))
+        n, seg = segment_plan(target, max_seg=getattr(vg, "max_seconds", 8), min_seg=getattr(vg, "min_seconds", 4))
         c = LabVideo(prompt=src.prompt, style=src.style, target_duration=target, n_segments=n, segment_seconds=seg,
                      image_model=src.image_model, video_model=getattr(vg, "model", None), video_provider=pid, status="PLANNING",
                      meta={"cloned_from": src.id})
@@ -383,7 +383,8 @@ class LabService:
         v = self.get(video_id)
         if not (MIN_TARGET <= target_duration <= MAX_TARGET):
             raise ValueError(f"target_duration must be {MIN_TARGET:.0f}-{MAX_TARGET:.0f} s")
-        n, seg = segment_plan(target_duration, max_seg=getattr(self._vg(v), "max_seconds", 8))
+        vg = self._vg(v)
+        n, seg = segment_plan(target_duration, max_seg=getattr(vg, "max_seconds", 8), min_seg=getattr(vg, "min_seconds", 4))
         same_n = n == v.n_segments
         v.target_duration, v.n_segments, v.segment_seconds = target_duration, n, seg
         v.final_path, v.final_duration = None, None

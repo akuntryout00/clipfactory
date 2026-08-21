@@ -288,8 +288,8 @@ function EditSegmentDialog({ seg, supportsEdit, onClose, onSubmit, busy }: { seg
 
 function ChangeLengthDialog({ open, video, onClose, onSubmit, busy }: { open: boolean; video: LabVideo; onClose: () => void; onSubmit: (d: number) => void; busy: boolean }) {
   const [d, setD] = useState(video.target_duration)
-  const maxSeg = video.video_provider?.startsWith("fal:") ? 15 : video.video_provider === "veo" ? 8 : video.video_provider === "fake" ? 8 : 10
-  const segs = Math.max(2, Math.ceil(d / maxSeg)), segLen = Math.max(4, Math.min(maxSeg, Math.round(d / segs)))
+  const { data: est } = useQuery({ queryKey: ["lab-estimate", video.video_provider, d], queryFn: () => lab.estimate(video.video_provider ?? "omni", d), placeholderData: prev => prev })
+  const segs = est?.n_segments ?? video.n_segments, segLen = est?.segment_seconds ?? video.segment_seconds
   const sameCount = segs === video.n_segments
   return (
     <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
@@ -301,8 +301,8 @@ function ChangeLengthDialog({ open, video, onClose, onSubmit, busy }: { open: bo
         <div className="space-y-4">
           <div>
             <div className="mb-1 flex justify-between text-xs"><span className="uppercase tracking-wider text-muted-foreground">New length</span><span className="font-mono">{d}s</span></div>
-            <input type="range" min={15} max={25} step={1} value={d} onChange={e => setD(Number(e.target.value))} className="scrub w-full" />
-            <div className="mt-1 font-mono text-[11px] text-muted-foreground">{segs + 1} keyframes · {segs} × {segLen}s clips</div>
+            <input type="range" min={3} max={25} step={1} value={d} onChange={e => setD(Number(e.target.value))} className="scrub w-full" />
+            <div className="mt-1 font-mono text-[11px] text-muted-foreground">{segs + 1} keyframes · {segs} × {segLen}s clips{est ? ` · ≈ $${est.total.toFixed(2)}` : ""}</div>
           </div>
           <p className={cn("rounded-md border p-3 text-xs", sameCount ? "border-border text-muted-foreground" : "border-primary/40 bg-primary/5 text-foreground")}>
             {sameCount ? "Segment count stays the same: your keyframes are kept and the clips are re-animated with the new length."

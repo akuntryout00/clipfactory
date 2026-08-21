@@ -22,7 +22,7 @@ router = APIRouter(prefix="/lab", tags=["ai-lab"])
 
 class LabCreate(BaseModel):
     prompt: str = Field(min_length=5, max_length=2000)
-    target_duration: float = Field(default=18, ge=15, le=25)
+    target_duration: float = Field(default=18, ge=3, le=25)
     style: str | None = Field(default=None, max_length=200)
     video_provider: str | None = Field(default=None, description="omni | veo | fal:<model> | fake (default: configured)")
 
@@ -37,7 +37,7 @@ class SegmentRedoBody(BaseModel):
 
 
 class DurationBody(BaseModel):
-    target_duration: float = Field(ge=15, le=25)
+    target_duration: float = Field(ge=3, le=25)
 
 
 class KeyframeOut(BaseModel):
@@ -125,6 +125,18 @@ def providers():
     return list_video_providers()
 
 
+@router.get("/estimate")
+def estimate(provider: str, duration: float):
+    from app.lab.pricing import estimate_cost
+
+    if not (3 <= duration <= 25):
+        raise HTTPException(422, "duration must be 3-25 s")
+    try:
+        return estimate_cost(provider, duration)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
 @router.post("/videos", response_model=LabVideoOut, status_code=201)
 def create(body: LabCreate, request: Request, db: Session = Depends(_db)):
     """Create instantly, then plan + generate keyframes in the background (watch `status`/`events`)."""
@@ -187,7 +199,7 @@ def animate(video_id: str, request: Request, db: Session = Depends(_db), force: 
 
 class CloneBody(BaseModel):
     video_provider: str | None = Field(default=None, description="omni | veo | fake — provider for the clone (default: configured)")
-    target_duration: float | None = Field(default=None, ge=15, le=25)
+    target_duration: float | None = Field(default=None, ge=3, le=25)
     animate: bool = True
 
 

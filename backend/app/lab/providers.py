@@ -174,6 +174,7 @@ class OmniVideoGen:
 
     name = "omni"
     max_seconds = 10
+    min_seconds = 2
 
     def __init__(self):
         from google import genai
@@ -259,6 +260,7 @@ class GoogleVideoGen:
 
     name = "veo"
     max_seconds = 8
+    min_seconds = 4
     last_ref = None
 
     def edit(self, *, ref: str, instruction: str, out_path: Path) -> Path:
@@ -331,6 +333,7 @@ class FakeVideoGen:
     name = "fake"
     model = "fake-video"
     max_seconds = 8
+    min_seconds = 2
     last_ref: str | None = None
     _counter = 0
 
@@ -368,27 +371,45 @@ class FakeVideoGen:
 FAL_MODELS: dict[str, dict] = {
     "minimax-h3": {
         "endpoint": "minimax/h3/image-to-video", "label": "MiniMax H3 (Hailuo 3)", "max_seconds": 15, "min_seconds": 5,
-        "price_hint": "~$0.26/s 2K", "note": "first+last frame, 2K, native audio · i2v arena #2",
+        "price_hint": "~$0.26/s 2K", "price_per_second": 0.26, "note": "first+last frame, 2K, native audio · i2v arena #2",
         "args": lambda first, last, prompt, sec: {"prompt": prompt, "image_url": first, "end_image_url": last, "resolution": "2K",
                                                   "duration": int(sec), "enable_prompt_expansion": False},
     },
     "seedance-2.0": {
         "endpoint": "bytedance/seedance-2.0/image-to-video", "label": "Seedance 2.0 (720p)", "max_seconds": 15, "min_seconds": 4,
-        "price_hint": "~$0.30/s", "note": "first+last frame, audio · i2v arena #1",
+        "price_hint": "~$0.30/s", "price_per_second": 0.3034, "note": "first+last frame, audio · i2v arena #1",
         "args": lambda first, last, prompt, sec: {"prompt": prompt, "image_url": first, "end_image_url": last, "aspect_ratio": "9:16",
                                                   "resolution": "720p", "duration": str(int(sec)), "generate_audio": True},
     },
     "seedance-2.0-fast": {
         "endpoint": "bytedance/seedance-2.0/fast/image-to-video", "label": "Seedance 2.0 Fast (720p)", "max_seconds": 15, "min_seconds": 4,
-        "price_hint": "~$0.24/s", "note": "cheaper/faster Seedance, first+last frame",
+        "price_hint": "~$0.24/s", "price_per_second": 0.2419, "note": "cheaper/faster Seedance, first+last frame",
         "args": lambda first, last, prompt, sec: {"prompt": prompt, "image_url": first, "end_image_url": last, "aspect_ratio": "9:16",
                                                   "resolution": "720p", "duration": str(int(sec)), "generate_audio": True},
     },
     "kling-3.0-std": {
         "endpoint": "fal-ai/kling-video/v3/standard/image-to-video", "label": "Kling 3.0 Standard", "max_seconds": 15, "min_seconds": 3,
-        "price_hint": "~$0.08–0.13/s", "note": "cheapest; first+last frame (aspect follows the image)",
+        "price_hint": "~$0.08/s", "price_per_second": 0.084, "note": "cheapest; first+last frame (aspect follows the image)",
         "args": lambda first, last, prompt, sec: {"prompt": prompt, "start_image_url": first, "end_image_url": last,
                                                   "duration": str(int(sec)), "generate_audio": False},
+    },
+    "seedance-2.5": {
+        "endpoint": "bytedance/seedance-2.5/image-to-video", "label": "Seedance 2.5 (720p)", "max_seconds": 30, "min_seconds": 4,
+        "price_hint": "~$0.47/s", "price_per_second": 0.473, "note": "newest Seedance; single-shot up to 30 s, first+last frame, audio",
+        "args": lambda first, last, prompt, sec: {"prompt": prompt, "image_url": first, "end_image_url": last, "aspect_ratio": "9:16",
+                                                  "resolution": "720p", "duration": str(int(sec)), "generate_audio": True},
+    },
+    "seedance-2.0-1080p": {
+        "endpoint": "bytedance/seedance-2.0/image-to-video", "label": "Seedance 2.0 (1080p)", "max_seconds": 15, "min_seconds": 4,
+        "price_hint": "~$0.68/s", "price_per_second": 0.682, "note": "same model at 1080p (sharper, 2× price)",
+        "args": lambda first, last, prompt, sec: {"prompt": prompt, "image_url": first, "end_image_url": last, "aspect_ratio": "9:16",
+                                                  "resolution": "1080p", "duration": str(int(sec)), "generate_audio": True},
+    },
+    "kling-3.0-pro": {
+        "endpoint": "fal-ai/kling-video/v3/pro/image-to-video", "label": "Kling 3.0 Pro", "max_seconds": 15, "min_seconds": 3,
+        "price_hint": "~$0.42/s", "price_per_second": 0.42, "note": "higher-quality Kling tier, first+last frame, audio",
+        "args": lambda first, last, prompt, sec: {"prompt": prompt, "start_image_url": first, "end_image_url": last,
+                                                  "duration": str(int(sec)), "generate_audio": True},
     },
 }
 
@@ -487,19 +508,36 @@ def provider_label(provider_id: str | None) -> str:
 
 
 def list_video_providers() -> list[dict]:
-    """Metadata for the UI: which providers/models exist and whether their keys are configured."""
+    """Metadata for the UI: which providers/models exist, prices, limits and whether their keys are configured."""
     s = get_settings()
     rows = [
-        {"id": "omni", "label": "Gemini Omni Flash", "model": s.google_video_model, "max_seconds": 10, "supports_edit": True,
-         "price_hint": "~$0.10/s", "note": "conversational clip edits; FIRST_FRAME + end reference (no true interpolation)",
+        {"id": "omni", "label": "Gemini Omni Flash", "vendor": "Google", "model": s.google_video_model, "max_seconds": 10, "min_seconds": 2,
+         "supports_edit": True, "first_last": False, "audio": True, "price_hint": "~$0.10/s", "price_per_second": 0.10,
+         "note": "conversational clip edits; FIRST_FRAME + end-reference (no true interpolation)",
          "available": bool(s.google_api_key), "needs": "GOOGLE_API_KEY"},
-        {"id": "veo", "label": "Google Veo 3.1 (fast)", "model": s.google_veo_model, "max_seconds": 8, "supports_edit": False,
-         "price_hint": "~$0.15–0.40/s", "note": "true first+last frame interpolation", "available": bool(s.google_api_key), "needs": "GOOGLE_API_KEY"},
+        {"id": "veo", "label": "Veo 3.1 Fast", "vendor": "Google", "model": s.google_veo_model, "max_seconds": 8, "min_seconds": 4,
+         "supports_edit": False, "first_last": True, "audio": True, "price_hint": "~$0.15/s", "price_per_second": 0.15,
+         "note": "true first+last frame interpolation", "available": bool(s.google_api_key), "needs": "GOOGLE_API_KEY"},
     ]
     for key, spec in FAL_MODELS.items():
-        rows.append({"id": f"fal:{key}", "label": spec["label"], "model": spec["endpoint"], "max_seconds": spec["max_seconds"],
-                     "supports_edit": False, "price_hint": spec.get("price_hint"), "note": spec.get("note"),
+        rows.append({"id": f"fal:{key}", "label": spec["label"], "vendor": "fal.ai", "model": spec["endpoint"], "max_seconds": spec["max_seconds"],
+                     "min_seconds": spec.get("min_seconds", 4), "supports_edit": False, "first_last": True,
+                     "audio": spec["args"]("a", "b", "p", 5).get("generate_audio", True) is not False,
+                     "price_hint": spec.get("price_hint"), "price_per_second": float(spec.get("price_per_second", 0)), "note": spec.get("note"),
                      "available": bool(s.fal_key), "needs": "FAL_KEY"})
-    rows.append({"id": "fake", "label": "Fake (offline test)", "model": "fake-video", "max_seconds": 8, "supports_edit": True,
-                 "price_hint": "free", "note": "cross-fade stand-in for tests", "available": True, "needs": None})
+    rows.append({"id": "fake", "label": "Fake (offline test)", "vendor": "local", "model": "fake-video", "max_seconds": 8, "min_seconds": 2,
+                 "supports_edit": True, "first_last": True, "audio": False, "price_hint": "free", "price_per_second": 0.0,
+                 "note": "cross-fade stand-in for tests", "available": True, "needs": None})
     return rows
+
+
+def provider_meta(provider_id: str | None) -> dict:
+    pid = (provider_id or get_settings().lab_video_provider).lower()
+    if pid.startswith("fake:"):
+        pid = "fake"
+    if pid == "fal":
+        pid = f"fal:{get_settings().lab_fal_model}"
+    for r in list_video_providers():
+        if r["id"] == pid:
+            return r
+    raise ValueError(f"unknown video provider '{provider_id}'")
