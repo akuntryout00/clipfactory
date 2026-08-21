@@ -18,7 +18,9 @@ from app.api.schemas import (
 )
 from app.assets.importer import VIDEO_EXT, import_assets, register_asset_file
 from app.assets.selector import extract_query_tags, find_candidates
-from app.config.loaders import list_personas, list_templates
+import json
+
+from app.config.loaders import list_personas, list_templates, load_caption_style
 from app.config.settings import get_settings
 from app.models import Asset, ProjectStatus, VideoProject, VideoScene
 from app.projects.jobs import InlineJobRunner, JobBusy, JobRunner
@@ -28,8 +30,11 @@ log = logging.getLogger(__name__)
 
 
 def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | None = None,
-               service_kwargs: dict | None = None) -> FastAPI:
-    service_kwargs = service_kwargs or {}
+               service_kwargs: dict | None = None, configs_dir: Path | None = None) -> FastAPI:
+    service_kwargs = dict(service_kwargs or {})
+    if configs_dir is not None:
+        service_kwargs["configs_dir"] = Path(configs_dir)
+    cfg_dir: Path = Path(configs_dir) if configs_dir is not None else get_settings().configs_dir
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -90,12 +95,64 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
 
     @app.get("/templates")
     def templates():
-        return [t.model_dump() for t in list_templates()]
+        return [t.model_dump() for t in list_templates(cfg_dir)]
+
+    def _template_path(tid: str) -> Path:
+        import re
+
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_\-]{1,40}", tid or ""):
+            raise HTTPException(422, "template id must be lowercase letters/digits/underscores, e.g. story_fast_v1")
+        return cfg_dir / "templates" / f"{tid}.json"
+
+    def _write_template(body: dict, path: Path):
+        from pydantic import ValidationError
+
+        from app.schemas.configs import TemplateConfig
+
+        try:
+            tpl = TemplateConfig.model_validate(body)
+        except ValidationError as exc:
+            raise HTTPException(422, exc.errors()[0].get("msg", "invalid template") if exc.errors() else "invalid template")
+        try:
+            load_caption_style(tpl.caption_style, cfg_dir)
+        except FileNotFoundError:
+            raise HTTPException(422, f"unknown caption_style {tpl.caption_style}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(tpl.model_dump(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        return tpl.model_dump()
+
+    @app.post("/templates", status_code=201)
+    def template_create(body: dict):
+        path = _template_path(str(body.get("id", "")))
+        if path.exists():
+            raise HTTPException(409, f"template {body.get('id')} already exists")
+        return _write_template(body, path)
+
+    @app.put("/templates/{template_id}")
+    def template_update(template_id: str, body: dict):
+        path = _template_path(template_id)
+        if not path.exists():
+            raise HTTPException(404, "template not found")
+        if body.get("id") != template_id:
+            raise HTTPException(422, "template id in body must match the URL (ids cannot be renamed; create a new one instead)")
+        return _write_template(body, path)
+
+    @app.delete("/templates/{template_id}", status_code=204)
+    def template_delete(template_id: str):
+        path = _template_path(template_id)
+        if not path.exists():
+            raise HTTPException(404, "template not found")
+        path.unlink()
+        return Response(status_code=204)
+
+    @app.get("/caption-styles")
+    def caption_styles():
+        return sorted(p.stem for p in (cfg_dir / "captions").glob("*.json"))
 
     @app.get("/personas")
     def personas():
         out = []
-        for p in list_personas():
+        for p in list_personas(cfg_dir):
             d = p.model_dump()
             d["voice"]["voice_id"] = "***" if d["voice"]["voice_id"] else ""
             out.append(d)

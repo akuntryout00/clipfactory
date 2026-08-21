@@ -40,9 +40,10 @@ ProgressFn = Callable[[str, str], None]
 class ProjectService:
     def __init__(self, session: Session, llm: LLMProvider | None = None, voice: VoiceProvider | None = None,
                  storage_dir: Path | None = None, assets_dir: Path | None = None, progress: ProgressFn | None = None,
-                 render_preset: str | None = None, render_crf: int | None = None):
+                 render_preset: str | None = None, render_crf: int | None = None, configs_dir: Path | None = None):
         s = get_settings()
         self.session = session
+        self.configs_dir = Path(configs_dir) if configs_dir else None
         self._llm = llm
         self._voice = voice
         self.storage_dir = Path(storage_dir or s.storage_dir)
@@ -110,13 +111,13 @@ class ProjectService:
         self.progress("FAILED", p.error)
 
     def _configs(self, p: VideoProject) -> tuple[PersonaConfig, TemplateConfig]:
-        return load_persona(p.persona_id), load_template(p.template_id)
+        return load_persona(p.persona_id, self.configs_dir), load_template(p.template_id, self.configs_dir)
 
     # ---------- project CRUD ----------
 
     def create_project(self, topic: str, template_id: str, persona_id: str | None = None, target_duration: float | None = None) -> VideoProject:
-        persona = load_persona(persona_id or get_settings().default_persona)
-        template = load_template(template_id)  # raises FileNotFoundError if unknown
+        persona = load_persona(persona_id or get_settings().default_persona, self.configs_dir)
+        template = load_template(template_id, self.configs_dir)  # raises FileNotFoundError if unknown
         td = float(target_duration if target_duration is not None else persona.target_duration or template.duration.target)
         if not (MIN_TARGET <= td <= MAX_TARGET):
             raise ValueError(f"target_duration must be within {MIN_TARGET:.0f}-{MAX_TARGET:.0f} s")
@@ -220,7 +221,7 @@ class ProjectService:
                 scenes = normalize_plan(raw, words, template, vg.duration)
             self.progress("PLANNING", f"{len(scenes)} scenes planned.")
             self._set_status(p, ProjectStatus.SELECTING_ASSETS, "Selecting B-roll...")
-            style = load_caption_style(template.caption_style)
+            style = load_caption_style(template.caption_style, self.configs_dir)
             new_seed = seed if seed is not None else random.randint(1, 2**31 - 1)
             music = self._pick_music(template, persona)
             video = assign_assets(session=self.session, llm=self.llm, persona=persona, template=template, topic=p.topic,
@@ -257,7 +258,7 @@ class ProjectService:
         out = self.renders_dir(p.id) / f"render_v{version}.mp4"
         work = self.storage_dir / "temp" / p.id / f"render_v{version}"
         try:
-            style = load_caption_style(template.caption_style)
+            style = load_caption_style(template.caption_style, self.configs_dir)
             music_path = (self.storage_dir / "music" / video.music) if video.music else None
             render_video(video, assets_dir=self.assets_dir, voice_path=Path(vg.audio_path), out_path=out, style=style,
                          work_dir=work, music_path=music_path, options=self.render_options)

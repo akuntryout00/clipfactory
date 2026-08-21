@@ -16,6 +16,10 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   system: () => req<SystemInfo>("/system"),
   templates: () => req<Template[]>("/templates"),
+  captionStyles: () => req<string[]>("/caption-styles"),
+  createTemplate: (t: Template) => req<Template>("/templates", { method: "POST", body: JSON.stringify(t) }),
+  updateTemplate: (t: Template) => req<Template>(`/templates/${t.id}`, { method: "PUT", body: JSON.stringify(t) }),
+  deleteTemplate: (id: string) => req<void>(`/templates/${id}`, { method: "DELETE" }),
   personas: () => req<Persona[]>("/personas"),
   projects: () => req<Project[]>("/projects"),
   project: (id: string) => req<Project>(`/projects/${id}`),

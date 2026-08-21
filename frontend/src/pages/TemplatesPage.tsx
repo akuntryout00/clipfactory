@@ -1,21 +1,30 @@
+import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { Pencil, Plus } from "lucide-react"
 import { api } from "@/lib/api"
+import type { Template } from "@/lib/types"
 import { PageHeader } from "@/components/PageHeader"
+import { TemplateEditor } from "@/components/TemplateEditor"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 export default function TemplatesPage() {
   const { data: templates } = useQuery({ queryKey: ["templates"], queryFn: api.templates })
   const { data: personas } = useQuery({ queryKey: ["personas"], queryFn: api.personas })
+  const [editing, setEditing] = useState<Template | "new" | null>(null)
   return (
     <div>
-      <PageHeader eyebrow="Configuration" title="Templates & persona">
-        <p className="mt-1 text-sm text-muted-foreground">Read-only view of <code className="font-mono">configs/</code>. Edit the JSON files to change structure, weights, closings or persona rules — no code changes needed.</p>
+      <PageHeader eyebrow="Configuration" title="Templates & persona"
+        actions={<Button onClick={() => setEditing("new")}><Plus className="size-4" /> New template</Button>}>
+        <p className="mt-1 text-sm text-muted-foreground">Templates are editable here (saved to <code className="font-mono">configs/templates/*.json</code>). Persona rules live in <code className="font-mono">configs/personas/</code>.</p>
       </PageHeader>
       <div className="space-y-8 px-8 py-6">
         <section className="grid gap-4 md:grid-cols-2">
           {(templates ?? []).map(t => (
             <Card key={t.id}>
-              <CardHeader><CardTitle className="flex items-baseline justify-between font-heading"><span>{t.name}</span><span className="font-mono text-[11px] font-normal text-muted-foreground">{t.id}</span></CardTitle></CardHeader>
+              <CardHeader><CardTitle className="flex items-center justify-between font-heading"><span>{t.name}</span>
+                <span className="flex items-center gap-2"><span className="font-mono text-[11px] font-normal text-muted-foreground">{t.id}</span>
+                  <Button size="sm" variant="outline" onClick={() => setEditing(t)}><Pencil className="size-3.5" /> Edit</Button></span></CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <p className="text-muted-foreground">{t.description}</p>
                 <div className="flex h-2 overflow-hidden rounded bg-surface-2">
@@ -45,6 +54,7 @@ export default function TemplatesPage() {
           ))}
         </section>
       </div>
+      <TemplateEditor template={editing} onClose={() => setEditing(null)} />
     </div>
   )
 }
