@@ -87,7 +87,7 @@ def _out(v: LabVideo, svc: LabService) -> LabVideoOut:
     evs = [EventOut(stage=e.stage, level=e.level, message=e.message, created_at=e.created_at) for e in svc.events(v.id)][-80:]
     from app.lab.providers import provider_label
 
-    pid = v.video_provider or svc.default_provider_id()
+    pid = v.video_provider or ("veo" if (v.video_model or "").startswith("veo") else svc.default_provider_id())
     supports_edit = pid in ("omni", "fake") or pid.startswith("fake:")
     return LabVideoOut(id=v.id, prompt=v.prompt, style=v.style, target_duration=v.target_duration, n_segments=v.n_segments, segment_seconds=v.segment_seconds,
                        style_guide=v.style_guide, status=v.status, stage_message=v.stage_message, error=v.error, final_duration=v.final_duration,
