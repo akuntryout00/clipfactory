@@ -6,9 +6,10 @@ import math
 MIN_SEG, MAX_SEG = 4, 8
 
 
-def segment_plan(target_duration: float) -> tuple[int, int]:
-    """Return (n_segments, seconds_per_segment) covering the target with the fewest 4–8 s clips."""
-    n = max(2, math.ceil(target_duration / MAX_SEG))
+def segment_plan(target_duration: float, max_seg: int = MAX_SEG) -> tuple[int, int]:
+    """Return (n_segments, seconds_per_segment) covering the target with the fewest clips of ≤ max_seg seconds."""
+    max_seg = max(MIN_SEG, int(max_seg))
+    n = max(2, math.ceil(target_duration / max_seg))
     seg = int(round(target_duration / n))
-    seg = max(MIN_SEG, min(MAX_SEG, seg))
+    seg = max(MIN_SEG, min(max_seg, seg))
     return n, seg

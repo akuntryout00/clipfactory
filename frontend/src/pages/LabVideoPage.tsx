@@ -21,7 +21,7 @@ export default function LabVideoPage() {
   const refresh = () => { qc.invalidateQueries({ queryKey: ["lab", id] }); qc.invalidateQueries({ queryKey: ["lab"] }) }
   const gen = useMutation({ mutationFn: (onlyMissing: boolean) => lab.generateImages(id, onlyMissing), onSuccess: () => { toast.success("Generating keyframes"); refresh() }, onError: e => toast.error(e.message) })
   const regen = useMutation({ mutationFn: ({ index, prompt }: { index: number; prompt?: string | null }) => lab.regenerate(id, index, prompt), onSuccess: () => { toast.success("Regenerating keyframe"); setEditing(null); refresh() }, onError: e => toast.error(e.message) })
-  const anim = useMutation({ mutationFn: () => lab.animate(id), onSuccess: () => { toast.success("Animating — this takes a few minutes"); refresh() }, onError: e => toast.error(e.message) })
+  const anim = useMutation({ mutationFn: (force: boolean) => lab.animate(id, force), onSuccess: () => { toast.success("Animating — this takes a few minutes"); refresh() }, onError: e => toast.error(e.message) })
   if (isLoading || !v) return <div className="p-8 text-muted-foreground">Loading…</div>
   const running = RUNNING.has(v.status)
   const allImages = v.keyframes.length > 0 && v.keyframes.every(k => k.status === "DONE")
@@ -33,7 +33,7 @@ export default function LabVideoPage() {
         title={v.prompt.length > 90 ? v.prompt.slice(0, 90) + "…" : v.prompt}
         actions={<>
           <Button variant="outline" size="sm" disabled={running} onClick={() => gen.mutate(false)}><RefreshCw className="size-4" /> Regenerate all images</Button>
-          <Button size="sm" disabled={running || !allImages} onClick={() => anim.mutate()}><Film className="size-4" /> {v.status === "DONE" ? "Animate again" : "Animate video"}</Button>
+          <Button size="sm" disabled={running || !allImages} onClick={() => anim.mutate(v.status === "DONE")}><Film className="size-4" /> {v.status === "DONE" ? "Animate again" : "Animate video"}</Button>
         </>}>
         <div className="mt-2 flex flex-wrap items-center gap-3 font-mono text-[11px] text-muted-foreground">
           <span className={cn("rounded border px-1.5 py-0.5", v.status === "DONE" ? "border-ready/30 text-ready" : v.status === "FAILED" ? "border-fail/30 text-fail" : "border-border")}>{running && <span className="mr-1 inline-block size-1.5 animate-pulse rounded-full bg-primary" />}{v.status.replace(/_/g, " ")}</span>

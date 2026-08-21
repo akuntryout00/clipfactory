@@ -84,10 +84,9 @@ class LabService:
             raise ValueError("describe the video you want (at least a few words)")
         if not (MIN_TARGET <= target_duration <= MAX_TARGET):
             raise ValueError(f"target_duration must be {MIN_TARGET:.0f}-{MAX_TARGET:.0f} s")
-        n, seg = segment_plan(target_duration)
+        n, seg = segment_plan(target_duration, max_seg=getattr(self.video, "max_seconds", 8))
         v = LabVideo(prompt=prompt.strip(), style=style, target_duration=target_duration, n_segments=n, segment_seconds=seg,
-                     image_model=getattr(self.image, "model", None) if self._image else get_settings().openai_image_model,
-                     video_model=getattr(self.video, "model", None) if self._video else get_settings().google_video_model)
+                     image_model=getattr(self.image, "model", None), video_model=getattr(self.video, "model", None))
         self.session.add(v)
         self.session.commit()
         try:
@@ -160,23 +159,26 @@ class LabService:
         return v
 
     # ---------- step 2: animate ----------
-    def animate(self, video_id: str) -> LabVideo:
+    def animate(self, video_id: str, force: bool = False) -> LabVideo:
+        """Animate every segment that is not done yet (force=True re-animates all, e.g. after changing provider/model)."""
         v = self.get(video_id)
         kfs = {k.index: k for k in self.keyframes(video_id)}
         if not kfs or any(k.status != "DONE" or not k.image_path for k in kfs.values()):
             raise RuntimeError("generate all keyframe images first")
         self._status(v, "ANIMATING", "Animating segments...")
+        v.video_model = getattr(self.video, "model", None) or v.video_model
         try:
             segs = self.segments(video_id)
             for s in segs:
-                if s.status == "DONE" and s.video_path and Path(s.video_path).is_file():
+                if not force and s.status == "DONE" and s.video_path and Path(s.video_path).is_file():
                     continue
                 s.status = "GENERATING"
                 self.session.commit()
                 out = self.dir(v.id) / f"seg_{s.index:02d}.mp4"
                 first, last = Path(kfs[s.from_index].image_path), Path(kfs[s.to_index].image_path)
                 motion = s.prompt or "smooth natural motion between the two frames"
-                prompt = f"{motion}. {v.style_guide or ''} Vertical 9:16 video, cinematic, no text."
+                builder = getattr(self.video, "build_prompt", None)
+                prompt = builder(motion, v.segment_seconds, v.style_guide or "") if builder else f"{motion}. {v.style_guide or ''} Vertical 9:16 video, cinematic, no text."
                 try:
                     self.video.animate(first=first, last=last, prompt=prompt, seconds=v.segment_seconds, out_path=out)
                 except Exception as exc:  # noqa: BLE001

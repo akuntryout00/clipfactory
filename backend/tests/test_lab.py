@@ -16,9 +16,24 @@ from app.lab.models import LabVideo, LabKeyframe, LabSegment  # noqa: F401 (regi
 
 @pytest.mark.parametrize("dur,n_seg,seg", [(15, 2, 8), (18, 3, 6), (20, 3, 7), (25, 4, 6)])
 def test_segment_plan_covers_target_with_4_to_8s_segments(dur, n_seg, seg):
-    n, s = segment_plan(dur)
+    n, s = segment_plan(dur, max_seg=8)
     assert (n, s) == (n_seg, seg)
     assert 4 <= s <= 8 and n >= 2
+
+
+@pytest.mark.parametrize("dur,n_seg,seg", [(15, 2, 8), (18, 2, 9), (20, 2, 10), (25, 3, 8)])
+def test_segment_plan_with_10s_segments_for_omni(dur, n_seg, seg):
+    assert segment_plan(dur, max_seg=10) == (n_seg, seg)
+
+
+def test_service_uses_provider_max_seconds(tmp_path):
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, expire_on_commit=False)()
+    vg = FakeVideoGen(); vg.max_seconds = 10
+    svc = LabService(s, image=FakeImageGen(), video=vg, planner=FakePlanner(), storage_dir=tmp_path / "storage")
+    v = svc.create(prompt="A quiet cafe morning", target_duration=20)
+    assert (v.n_segments, v.segment_seconds) == (2, 10)
 
 
 @pytest.fixture()
@@ -103,3 +118,18 @@ def test_lab_api_flow(tmp_path):
         assert c.get("/lab/videos").json()[0]["id"] == vid
         assert c.delete(f"/lab/videos/{vid}").status_code == 204
         assert c.get(f"/lab/videos/{vid}").status_code == 404
+
+
+def test_animate_force_redoes_finished_segments(lab):
+    svc, s = lab
+    v = svc.create(prompt="A quiet cafe morning", target_duration=15)
+    svc.generate_images(v.id)
+    svc.animate(v.id)
+    first_paths = [Path(x.video_path) for x in svc.segments(v.id)]
+    mtimes = [p.stat().st_mtime_ns for p in first_paths]
+    import time; time.sleep(0.05)
+    svc.animate(v.id)  # no force → segments untouched
+    assert [p.stat().st_mtime_ns for p in first_paths] == mtimes
+    svc.animate(v.id, force=True)  # force → re-rendered
+    assert [p.stat().st_mtime_ns for p in first_paths] != mtimes
+    assert svc.get(v.id).status == "DONE"

@@ -130,11 +130,11 @@ def regenerate_keyframe(video_id: str, index: int, body: RegenBody, request: Req
 
 
 @router.post("/videos/{video_id}/animate", status_code=202)
-def animate(video_id: str, request: Request, db: Session = Depends(_db)):
+def animate(video_id: str, request: Request, db: Session = Depends(_db), force: bool = False):
     v, svc = _get(video_id, request, db)
     if any(k.status != "DONE" for k in svc.keyframes(video_id)):
         raise HTTPException(409, "generate all keyframe images first")
-    return _job(request, video_id, lambda s: s.animate(video_id))
+    return _job(request, video_id, lambda s: s.animate(video_id, force=force))
 
 
 @router.get("/videos/{video_id}/keyframes/{index}/image")

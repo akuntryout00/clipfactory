@@ -142,14 +142,21 @@ class FakeImageGen:
 class VideoGen(Protocol):
     name: str
     model: str
+    max_seconds: int  # longest clip this provider makes in one call
 
     def animate(self, *, first: Path, last: Path, prompt: str, seconds: int, out_path: Path) -> Path: ...
 
 
-class GoogleVideoGen:
-    """Google Gemini API video generation (first + last frame interpolation) via google-genai."""
+class OmniVideoGen:
+    """Gemini Omni Flash via the Interactions API (official docs: ai.google.dev/gemini-api/docs/omni).
 
-    name = "google"
+    Omni does NOT support first/last-frame interpolation, so we use its tag syntax: the first keyframe is the
+    literal <FIRST_FRAME>, the next keyframe is an <IMAGE_REF_0> reference describing how the shot should end,
+    and the prompt asks for one continuous shot of N seconds (Omni generates up to ~10 s per call).
+    """
+
+    name = "omni"
+    max_seconds = 10
 
     def __init__(self):
         from google import genai
@@ -158,7 +165,77 @@ class GoogleVideoGen:
         if not s.google_api_key:
             raise RuntimeError("GOOGLE_API_KEY is not set")
         self._client = genai.Client(api_key=s.google_api_key)
-        self.model = s.google_video_model
+        self.model = s.google_video_model  # gemini-omni-flash-preview
+
+    @staticmethod
+    def build_prompt(motion: str, seconds: int, style: str) -> str:
+        return (
+            "[# Sources <FIRST_FRAME>@Image1] [# References <IMAGE_REF_0>@Image2] "
+            f"A single continuous unbroken shot of {seconds} seconds, no scene cuts. Start exactly on Image1. "
+            f"{motion.strip().rstrip('.')}. By the end of the shot the scene looks like Image2 (same subject, place and framing as Image2). "
+            f"{style.strip()} Keep the same character, wardrobe, location and color grade throughout. "
+            "Natural ambient sound only, no dialogue, no music, no on-screen text. "
+            "Use Image1 as the starting frame. Use Image2 as a reference for the end of the shot, not as a literal frame."
+        )
+
+    def animate(self, *, first: Path, last: Path, prompt: str, seconds: int, out_path: Path) -> Path:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        b64 = lambda p: base64.b64encode(p.read_bytes()).decode()  # noqa: E731
+        it = self._client.interactions.create(
+            model=self.model,
+            input=[{"type": "image", "data": b64(first), "mime_type": "image/png"},
+                   {"type": "image", "data": b64(last), "mime_type": "image/png"},
+                   {"type": "text", "text": prompt}],
+            response_format={"type": "video", "aspect_ratio": "9:16", "delivery": "uri"},
+            background=False, store=True,
+        )
+        if it.status != "completed":
+            raise RuntimeError(f"omni interaction {it.status}: {it.errors}")
+        ov = it.output_video
+        data: bytes | None = None
+        if ov is not None and ov.data:
+            data = base64.b64decode(ov.data)
+        elif ov is not None and ov.uri:
+            name = "files/" + ov.uri.split("/files/")[1].split(":")[0]
+            t0 = time.time()
+            while True:
+                f = self._client.files.get(name=name)
+                state = getattr(f.state, "name", str(f.state))
+                if state == "ACTIVE":
+                    break
+                if state == "FAILED" or time.time() - t0 > 600:
+                    raise RuntimeError(f"omni video file {state}")
+                time.sleep(5)
+            data = self._client.files.download(file=ov.uri)
+        if not data:
+            # fall back to steps (REST shape)
+            for step in it.steps or []:
+                for part in getattr(step, "content", None) or []:
+                    if getattr(part, "type", "") == "video" and getattr(part, "data", None):
+                        data = base64.b64decode(part.data)
+        if not data:
+            raise RuntimeError("omni returned no video")
+        raw = out_path.with_suffix(".raw.mp4")
+        raw.write_bytes(data)
+        _normalize_segment(raw, out_path)
+        raw.unlink(missing_ok=True)
+        return out_path
+
+
+class GoogleVideoGen:
+    """Google Veo (predictLongRunning) — true first + last frame interpolation via google-genai generate_videos."""
+
+    name = "veo"
+    max_seconds = 8
+
+    def __init__(self):
+        from google import genai
+
+        s = get_settings()
+        if not s.google_api_key:
+            raise RuntimeError("GOOGLE_API_KEY is not set")
+        self._client = genai.Client(api_key=s.google_api_key)
+        self.model = s.google_veo_model
         self.poll_seconds = 8
         self.timeout_seconds = 900
 
@@ -217,6 +294,7 @@ class FakeVideoGen:
 
     name = "fake"
     model = "fake-video"
+    max_seconds = 8
 
     def animate(self, *, first: Path, last: Path, prompt: str, seconds: int, out_path: Path) -> Path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -245,4 +323,8 @@ def get_image_gen(name: str | None = None) -> ImageGen:
 
 def get_video_gen(name: str | None = None) -> VideoGen:
     n = (name or get_settings().lab_video_provider).lower()
-    return FakeVideoGen() if n == "fake" else GoogleVideoGen()
+    if n == "fake":
+        return FakeVideoGen()
+    if n in ("veo", "google"):
+        return GoogleVideoGen()
+    return OmniVideoGen()
