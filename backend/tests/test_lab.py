@@ -77,21 +77,20 @@ def test_retry_resumes_from_failed_stage(lab, monkeypatch):
     svc.plan(v.id)
     calls = {"n": 0}
     real = svc.image.generate
-    def flaky(*, prompt, out_path):
+    def flaky(*, prompt, out_path, reference=None):
         calls["n"] += 1
         if calls["n"] == 2:
             raise RuntimeError("image API down")
-        return real(prompt=prompt, out_path=out_path)
+        return real(prompt=prompt, out_path=out_path, reference=reference)
     monkeypatch.setattr(svc.image, "generate", flaky)
     with pytest.raises(RuntimeError):
         svc.generate_images(v.id)
     v = svc.get(v.id)
     assert v.status == "FAILED" and "image API down" in v.error
-    statuses = [k.status for k in svc.keyframes(v.id)]
-    assert statuses.count("FAILED") == 1 and "GENERATING" not in statuses  # others finished (parallel) or stayed pending
+    assert [k.status for k in svc.keyframes(v.id)] == ["DONE", "FAILED", "PENDING"]  # sequential: stops at the failure
     svc.retry(v.id)  # resumes: only missing images, no re-plan
     v = svc.get(v.id)
-    assert v.status == "IMAGES_READY" and calls["n"] == 4  # 3 first round (1 failed) + 1 resumed
+    assert v.status == "IMAGES_READY" and calls["n"] == 4  # 1 ok + 1 fail + 2 resumed
 
 
 def test_generate_images_then_animate_produces_916_mp4(lab):
@@ -176,21 +175,38 @@ def test_animate_force_redoes_finished_segments(lab):
     assert svc.get(v.id).status == "DONE"
 
 
-def test_generate_images_runs_keyframes_concurrently(tmp_path):
+def test_generate_images_chains_previous_frame_as_reference(tmp_path):
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, expire_on_commit=False)()
+
+    class RecordingImage(FakeImageGen):
+        calls: list[tuple[str, str | None]] = []
+        def generate(self, *, prompt, out_path, reference=None):
+            self.calls.append((str(out_path.name), str(reference.name) if reference else None))
+            return super().generate(prompt=prompt, out_path=out_path, reference=reference)
+
+    img = RecordingImage()
+    svc = LabService(s, image=img, video=FakeVideoGen(), planner=FakePlanner(), storage_dir=tmp_path / "storage")
+    v = svc.create(prompt="A quiet cafe morning", target_duration=18)  # 4 keyframes
+    svc.plan(v.id)
+    svc.generate_images(v.id)
+    assert img.calls == [("kf_00_v1.png", None), ("kf_01_v1.png", "kf_00_v1.png"), ("kf_02_v1.png", "kf_01_v1.png"), ("kf_03_v1.png", "kf_02_v1.png")]
+    # regenerating frame 2 uses frame 1 as reference
+    img.calls.clear()
+    svc.regenerate_keyframe(v.id, 2, prompt="a red door in the rain")
+    assert img.calls == [("kf_02_v2.png", "kf_01_v1.png")]
+
+
+def test_default_image_quality_is_low():
+    from app.config.settings import Settings
+    assert Settings(_env_file=None).openai_image_quality == "low"
+
+
+def _unused_parallel_test(tmp_path):
     import time
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, expire_on_commit=False)()
 
-    class SlowImage(FakeImageGen):
-        def generate(self, *, prompt, out_path):
-            time.sleep(0.4)
-            return super().generate(prompt=prompt, out_path=out_path)
-
-    svc = LabService(s, image=SlowImage(), video=FakeVideoGen(), planner=FakePlanner(), storage_dir=tmp_path / "storage", image_concurrency=3)
-    v = svc.create(prompt="A quiet cafe morning", target_duration=18)  # 4 keyframes
-    svc.plan(v.id)
-    t0 = time.time()
-    svc.generate_images(v.id)
-    assert time.time() - t0 < 1.4  # 4 × 0.4 s would be 1.6 s sequentially (+ffmpeg); concurrency=3 → ~2 rounds
-    assert all(k.status == "DONE" for k in svc.keyframes(v.id))
+    pass

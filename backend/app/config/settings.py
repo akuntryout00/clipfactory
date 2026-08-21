@@ -29,8 +29,8 @@ class Settings(BaseSettings):
     # AI Lab (isolated module): OpenAI images + Google video
     openai_image_model: str = "gpt-image-2"
     openai_image_size: str = "1024x1536"
-    openai_image_quality: str = "medium"   # low | medium | high — high ≈ 100 s per image, medium ≈ 40 s
-    lab_image_concurrency: int = 3          # keyframes generated in parallel
+    openai_image_quality: str = "low"      # low | medium | high — high ≈ 100 s per image, medium ≈ 40 s, low ≈ 20 s
+    openai_image_input_fidelity: str = "high"  # edit endpoint: how closely the reference frame is preserved
     google_api_key: str | None = None
     google_video_model: str = "gemini-omni-flash-preview"  # Omni (Interactions API), up to ~10 s per clip
     google_veo_model: str = "veo-3.1-fast-generate-preview"  # alternative provider with true first/last-frame interpolation

@@ -22,9 +22,8 @@ MIN_TARGET, MAX_TARGET = 15.0, 25.0
 
 class LabService:
     def __init__(self, session: Session, image: ImageGen | None = None, video: VideoGen | None = None, planner: Planner | None = None,
-                 storage_dir: Path | None = None, progress: Callable[[str, str], None] | None = None, image_concurrency: int | None = None):
+                 storage_dir: Path | None = None, progress: Callable[[str, str], None] | None = None):
         self.session = session
-        self.image_concurrency = max(1, int(image_concurrency or get_settings().lab_image_concurrency))
         self._image, self._video, self._planner = image, video, planner
         self.storage_dir = Path(storage_dir or get_settings().storage_dir) / "lab"
         self.progress = progress or (lambda st, m: None)
@@ -149,62 +148,40 @@ class LabService:
         return f"{k.prompt}\n\nSTYLE (keep identical across frames): {v.style_guide or ''}\nVertical 9:16 portrait composition, no text, no watermark."
 
     def generate_images(self, video_id: str, only_missing: bool = False) -> LabVideo:
-        """Generate keyframe images — up to `image_concurrency` in parallel (pure API I/O in threads, DB writes here)."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
+        """Generate keyframe images in order; each frame receives the previous frame as a reference for continuity."""
         v = self.get(video_id)
         kfs = self.keyframes(video_id)
         if not kfs:
             raise RuntimeError("plan the storyboard first")
         total = len(kfs)
-        todo = [k for k in kfs if not (only_missing and k.status == "DONE" and k.image_path and Path(k.image_path).is_file())]
         model = getattr(self.image, "model", "image model")
-        self._status(v, "GENERATING_IMAGES", f"Generating {len(todo)} of {total} keyframe images with {model} ({self.image_concurrency} at a time)…")
-        jobs: dict[int, tuple[LabKeyframe, Path, float]] = {}
-        for k in todo:
-            k.status, k.error = "GENERATING", None
-            k.version += 1
-            out = self.dir(v.id) / f"kf_{k.index:02d}_v{k.version}.png"
-            jobs[k.index] = (k, out, time.time())
-            self._log(v, "IMAGE", f"Keyframe {k.index + 1}/{total} “{k.caption or ''}”: generating with {model}…")
-        prompts = {k.index: self._image_prompt(v, k) for k, _, _ in jobs.values()}
-        failures: list[str] = []
+        self._status(v, "GENERATING_IMAGES", f"Generating {total} keyframe images with {model}, one after another (each uses the previous frame as reference)…")
         try:
-            with ThreadPoolExecutor(max_workers=self.image_concurrency) as pool:
-                futs = {pool.submit(self.image.generate, prompt=prompts[i], out_path=out): i for i, (_, out, _) in jobs.items()}
-                for fut in as_completed(futs):
-                    i = futs[fut]
-                    k, out, t0 = jobs[i]
-                    try:
-                        fut.result()
-                        k.image_path, k.status, k.error = str(out), "DONE", None
-                        self.session.commit()
-                        self._log(v, "IMAGE", f"Keyframe {k.index + 1}/{total} ready ({time.time() - t0:.0f}s)", level="success")
-                    except Exception as exc:  # noqa: BLE001
-                        k.status, k.error = "FAILED", str(exc)
-                        self.session.commit()
-                        failures.append(f"keyframe {k.index + 1}: {exc}")
-                        self._log(v, "IMAGE", f"Keyframe {k.index + 1}/{total} failed: {exc}", level="error")
-            if failures:
-                raise RuntimeError("; ".join(failures))
+            prev: Path | None = None
+            for k in kfs:
+                if only_missing and k.status == "DONE" and k.image_path and Path(k.image_path).is_file():
+                    prev = Path(k.image_path)
+                    continue
+                self._gen_keyframe(v, k, total, reference=prev)
+                prev = Path(k.image_path) if k.image_path else prev
             self._status(v, "IMAGES_READY", "All keyframes ready — review them, then press Animate", level="success")
         except Exception as exc:  # noqa: BLE001
             self._fail(v, "images", exc)
             raise
         return v
 
-    def _gen_keyframe(self, v: LabVideo, k: LabKeyframe, total: int | None = None) -> None:
-        """Generate one keyframe synchronously (used by regenerate)."""
+    def _gen_keyframe(self, v: LabVideo, k: LabKeyframe, total: int | None = None, reference: Path | None = None) -> None:
         total = total or len(self.keyframes(v.id))
         model = getattr(self.image, "model", "image model")
         k.status = "GENERATING"
         self.session.commit()
         k.version += 1
-        self._log(v, "IMAGE", f"Keyframe {k.index + 1}/{total} “{k.caption or ''}”: generating with {model}…")
+        ref_note = f" (reference: keyframe {k.index})" if reference else ""
+        self._log(v, "IMAGE", f"Keyframe {k.index + 1}/{total} “{k.caption or ''}”: generating with {model}{ref_note}…")
         out = self.dir(v.id) / f"kf_{k.index:02d}_v{k.version}.png"
         t0 = time.time()
         try:
-            self.image.generate(prompt=self._image_prompt(v, k), out_path=out)
+            self.image.generate(prompt=self._image_prompt(v, k), out_path=out, reference=reference)
         except Exception as exc:  # noqa: BLE001
             k.status, k.error = "FAILED", str(exc)
             self.session.commit()
@@ -222,8 +199,10 @@ class LabService:
         if prompt:
             k.prompt = prompt.strip()
         self._status(v, "GENERATING_IMAGES", f"Regenerating keyframe {index + 1}…")
+        prev_k = next((x for x in self.keyframes(video_id) if x.index == index - 1), None)
+        reference = Path(prev_k.image_path) if prev_k and prev_k.image_path and Path(prev_k.image_path).is_file() else None
         try:
-            self._gen_keyframe(v, k)
+            self._gen_keyframe(v, k, reference=reference)
             # segments touching this frame must be re-animated
             for s in self.segments(video_id):
                 if index in (s.from_index, s.to_index):

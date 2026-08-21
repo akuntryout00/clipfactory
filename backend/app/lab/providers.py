@@ -80,7 +80,9 @@ class ImageGen(Protocol):
     name: str
     model: str
 
-    def generate(self, *, prompt: str, out_path: Path) -> Path: ...
+    def generate(self, *, prompt: str, out_path: Path, reference: Path | None = None) -> Path:
+        """Generate one 9:16 keyframe. `reference` = the previous keyframe image (same character/style continuity)."""
+        ...
 
 
 def _to_916_png(src: Path, dst: Path) -> Path:
@@ -103,12 +105,21 @@ class OpenAIImageGen:
         self.model = s.openai_image_model
         self.size = s.openai_image_size
 
-    def generate(self, *, prompt: str, out_path: Path) -> Path:
+    def generate(self, *, prompt: str, out_path: Path, reference: Path | None = None) -> Path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        kwargs = dict(model=self.model, prompt=prompt, n=1, size=self.size)
-        if not self.model.startswith("dall-e"):
-            kwargs.update(quality=get_settings().openai_image_quality, output_format="png")
-        resp = self._client.images.generate(**kwargs)
+        s = get_settings()
+        if reference is not None and reference.is_file() and not self.model.startswith("dall-e"):
+            # continuity: edit endpoint with the previous keyframe as the reference image
+            edit_prompt = ("Use the reference image for continuity: keep the SAME character (face, hair, wardrobe), the same place, "
+                           "palette, lens and rendering style. Now create the NEXT frame of the story:\n" + prompt)
+            with reference.open("rb") as fh:
+                resp = self._client.images.edit(model=self.model, image=[fh], prompt=edit_prompt, n=1, size=self.size,
+                                                quality=s.openai_image_quality, input_fidelity=s.openai_image_input_fidelity)
+        else:
+            kwargs = dict(model=self.model, prompt=prompt, n=1, size=self.size)
+            if not self.model.startswith("dall-e"):
+                kwargs.update(quality=s.openai_image_quality, output_format="png")
+            resp = self._client.images.generate(**kwargs)
         data = resp.data[0]
         raw = out_path.with_suffix(".raw.png")
         if getattr(data, "b64_json", None):
@@ -129,7 +140,7 @@ class FakeImageGen:
     model = "fake-image"
     _colors = ["0x3b82f6", "0xf59e0b", "0x10b981", "0xef4444", "0x8b5cf6", "0x14b8a6"]
 
-    def generate(self, *, prompt: str, out_path: Path) -> Path:
+    def generate(self, *, prompt: str, out_path: Path, reference: Path | None = None) -> Path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         color = self._colors[sum(map(ord, prompt)) % len(self._colors)]
         subprocess.run([get_settings().ffmpeg_bin, "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"color=c={color}:s={W}x{H}:d=0.1",
