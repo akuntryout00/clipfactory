@@ -167,3 +167,17 @@ class AssetEnrichment(BaseModel):
 
 class AssetEnrichOutput(BaseModel):
     assets: list[AssetEnrichment]
+
+
+# ---------- AI clip analysis (vision) ----------
+
+class ClipAnalysis(BaseModel):
+    description: str = Field(description="One-sentence literal description of what is visible and happening")
+    tags: list[str] = Field(description="6-12 lowercase single-word search tags: objects, action, place, framing, feeling, concepts")
+    action: str = Field(description="snake_case main action, e.g. typing_laptop, scrolling_phone, walking_street")
+    location: str = Field(description="cafe | office | street | home | store | gym | park | other")
+    shot: str = Field(description="close | medium | wide")
+    mood: str = Field(description="neutral | focused | stressed | relaxed | happy | energetic")
+    suggested_category: str = Field(description="Best matching library category from the provided list, or a short new lowercase folder name")
+    quality_score: float = Field(default=0.8, ge=0, le=1, description="0-1 technical/visual quality estimate (steady, lit, usable)")
+    notes: str | None = Field(default=None, description="Anything an editor should know (shaky part, faces, text on screen)")

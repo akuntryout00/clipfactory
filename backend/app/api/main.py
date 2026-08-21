@@ -166,10 +166,49 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
         llm = request.app.state.service_kwargs.get("llm") or get_llm()
         return {"enriched": enrich_library(db, llm, overwrite=overwrite)}
 
+    @app.post("/assets/analyze")
+    async def asset_analyze(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
+        """AI autocomplete: sample frames from the uploaded video and let the LLM fill every metadata field. Nothing is saved."""
+        import shutil
+        import tempfile
+
+        from sqlalchemy import distinct
+
+        from app.assets.frames import extract_frames
+        from app.assets.metadata import probe_video
+        from app.llm.base import get_llm
+
+        suffix = Path(file.filename or "").suffix.lower()
+        if suffix not in VIDEO_EXT:
+            raise HTTPException(400, f"unsupported file type {suffix or '(none)'}")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td) / f"clip{suffix}"
+            with tmp.open("wb") as out:
+                shutil.copyfileobj(file.file, out)
+            try:
+                meta = probe_video(tmp)
+                frames = extract_frames(tmp, n=6, width=512)
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(400, f"could not read video: {exc}")
+            if not frames:
+                raise HTTPException(400, "could not extract frames from the video")
+            cats = sorted({f.split("/")[0] for (f,) in db.execute(select(distinct(Asset.file))).all()})
+            llm = request.app.state.service_kwargs.get("llm") or get_llm()
+            try:
+                analysis = llm.analyze_clip(frames=frames, filename=file.filename or "clip", duration=meta.duration, categories=cats)
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(502, f"AI analysis failed: {exc}")
+        margin = min(0.2, meta.duration * 0.05)
+        return {**analysis.model_dump(), "duration": round(meta.duration, 3), "width": meta.width, "height": meta.height,
+                "fps": round(meta.fps, 3), "usable_start": round(margin, 2), "usable_end": round(max(meta.duration - margin, margin), 2),
+                "frames_analyzed": len(frames), "categories": cats}
+
     @app.post("/assets/upload", response_model=AssetOut, status_code=201)
     async def asset_upload(request: Request, response: Response, file: UploadFile = File(...), category: str = Form(...),
                            description: str | None = Form(None), tags: str | None = Form(None), approved: bool = Form(False),
                            usable_start: float | None = Form(None), usable_end: float | None = Form(None),
+                           action: str | None = Form(None), location: str | None = Form(None), shot: str | None = Form(None),
+                           mood: str | None = Form(None), quality_score: float | None = Form(None),
                            enrich: bool = True, db: Session = Depends(get_db)):
         """Add a single B-roll clip: saves under assets/<category>/ (never overwrites), probes it, creates the asset row,
         then (by default) runs AI enrichment for just this clip so it is searchable right away."""
@@ -197,7 +236,9 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
         try:
             asset = register_asset_file(db, assets_dir(request), rel, description=description or None,
                                         tags=(tags or "").split(","), approved=approved,
-                                        usable_start=usable_start, usable_end=usable_end)
+                                        usable_start=usable_start, usable_end=usable_end,
+                                        action=action or None, location=location or None, shot=shot or None, mood=mood or None,
+                                        quality_score=quality_score if quality_score is not None else 0.8)
         except Exception as exc:  # noqa: BLE001
             dest.unlink(missing_ok=True)
             raise HTTPException(400, f"could not read video: {exc}")

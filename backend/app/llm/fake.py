@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from app.schemas.configs import PersonaConfig, TemplateConfig
 from app.schemas.pipeline import (
-    AssetEnrichment, AssetEnrichOutput, AssetRankOutput, NormalizedScene, SceneAssetChoice, ScenePlanOutput, ScriptOutput, ScriptSection, WordTiming,
+    AssetEnrichment, AssetEnrichOutput, AssetRankOutput, ClipAnalysis, NormalizedScene, SceneAssetChoice, ScenePlanOutput, ScriptOutput, ScriptSection, WordTiming,
 )
 
 _FILLER = (
@@ -70,3 +70,11 @@ class FakeLLM:
         return AssetEnrichOutput(assets=[AssetEnrichment(asset_id=a["asset_id"], tags=list(a.get("tags") or []) + ["broll"],
                                                          action=a.get("action"), location=a.get("location"), mood=None,
                                                          shot=a.get("shot")) for a in assets])
+
+    def analyze_clip(self, *, frames: list[bytes], filename: str, duration: float, categories: list[str]) -> ClipAnalysis:
+        stem = filename.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
+        base = "phone" if "phone" in stem else "walk" if "walk" in stem else "desk"
+        cat = next((c for c in categories if base in c), categories[0] if categories else base)
+        return ClipAnalysis(description=f"Synthetic analysis of {stem} ({duration:.1f}s, {len(frames)} frames)",
+                            tags=[base, "clip", "test", "broll", "cafe"], action=f"{base}_action", location="cafe",
+                            shot="medium", mood="neutral", suggested_category=cat, quality_score=0.75, notes=None)

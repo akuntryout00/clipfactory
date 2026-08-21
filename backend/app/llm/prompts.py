@@ -155,3 +155,19 @@ def enrich_user_prompt(assets: list[dict]) -> str:
     lines = [f"- {a['asset_id']} ({a['file']}): {a.get('description') or ''} | existing tags: {', '.join(a.get('tags') or [])} | "
              f"action={a.get('action')} location={a.get('location')} shot={a.get('shot')}" for a in assets]
     return "CLIPS:\n" + "\n".join(lines) + "\n\nReturn one entry per asset_id."
+
+
+ANALYZE_SYSTEM = (
+    "You are cataloguing B-roll for a short-form video factory. You see several frames sampled evenly from one vertical clip. "
+    "Describe literally what is visible and happening (people, hands, devices, objects, place, framing, camera motion), then "
+    "produce search metadata. Tags must be lowercase single words: objects, the action, the place, framing (close/medium/wide), "
+    "the feeling, and 2-4 concepts the clip could illustrate in productivity/career/AI/lifestyle videos (e.g. focus, distraction, "
+    "commute, planning, overwhelm). Do not invent things you cannot see. Output JSON only."
+)
+
+
+def analyze_user_prompt(filename: str, duration: float, categories: list[str], n_frames: int) -> str:
+    cats = ", ".join(categories) if categories else "(none yet)"
+    return (f"Clip file: {filename} · duration {duration:.1f}s · {n_frames} frames sampled in order.\n"
+            f"Existing library categories (folders): {cats}. Pick the best one as suggested_category, or propose a short new one.\n"
+            "Fill every field.")

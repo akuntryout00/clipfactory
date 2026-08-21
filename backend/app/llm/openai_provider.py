@@ -10,7 +10,7 @@ from app.config.settings import get_settings
 from app.content.scene_planner import section_word_ranges
 from app.llm import prompts
 from app.schemas.configs import PersonaConfig, TemplateConfig
-from app.schemas.pipeline import AssetEnrichOutput, AssetRankOutput, NormalizedScene, ScenePlanOutput, ScriptOutput, WordTiming
+from app.schemas.pipeline import AssetEnrichOutput, AssetRankOutput, ClipAnalysis, NormalizedScene, ScenePlanOutput, ScriptOutput, WordTiming
 
 log = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
@@ -29,7 +29,7 @@ class OpenAIProvider:
         self._client = OpenAI(api_key=key)
         self.model = model or s.openai_model
 
-    def _parse(self, system: str, user: str, schema: type[T], temperature: float = 0.8) -> T:
+    def _parse(self, system: str, user, schema: type[T], temperature: float = 0.8) -> T:
         kwargs = dict(model=self.model, messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
                       response_format=schema)
         if not self.model.startswith(("o1", "o3", "o4", "gpt-5")):
@@ -60,3 +60,11 @@ class OpenAIProvider:
 
     def rank_assets(self, *, topic: str, scenes: list[NormalizedScene], candidates: dict[int, list[dict]]) -> AssetRankOutput:
         return self._parse(prompts.RANK_SYSTEM, prompts.rank_user_prompt(topic, scenes, candidates), AssetRankOutput, temperature=0.3)
+
+    def analyze_clip(self, *, frames: list[bytes], filename: str, duration: float, categories: list[str]) -> ClipAnalysis:
+        import base64
+
+        content: list[dict] = [{"type": "text", "text": prompts.analyze_user_prompt(filename, duration, categories, len(frames))}]
+        for fr in frames:
+            content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(fr).decode(), "detail": "low"}})
+        return self._parse(prompts.ANALYZE_SYSTEM, content, ClipAnalysis, temperature=0.2)

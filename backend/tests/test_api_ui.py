@@ -166,3 +166,28 @@ def test_upload_can_skip_enrich(client, tmp_path):
     with clip.open("rb") as f:
         r = client.post("/assets/upload?enrich=false", data={"category": "desk", "tags": "notebook"}, files={"file": ("n.mp4", f, "video/mp4")})
     assert r.status_code == 201 and "broll" not in r.json()["tags"]
+
+
+def test_analyze_endpoint_returns_ai_fields_without_saving(client, mini_assets, tmp_path):
+    from tests.conftest import make_clip
+    clip = make_clip(tmp_path / "a.mp4", seconds=3)
+    before = len(client.get("/assets").json())
+    with clip.open("rb") as f:
+        r = client.post("/assets/analyze", files={"file": ("My Walk.mp4", f, "video/mp4")})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["description"] and d["tags"] and d["action"] and d["shot"] and d["mood"] and d["location"]
+    assert d["suggested_category"] in {"desk", "phone", "walking", "reaction"} or d["suggested_category"]
+    assert d["duration"] > 2.5 and d["width"] == 360
+    assert len(client.get("/assets").json()) == before  # nothing saved
+    assert not any(p.name.startswith("my_walk") for p in (mini_assets).rglob("*.mp4"))
+
+
+def test_upload_accepts_semantic_fields(client, tmp_path):
+    from tests.conftest import make_clip
+    clip = make_clip(tmp_path / "s.mp4", seconds=3)
+    with clip.open("rb") as f:
+        r = client.post("/assets/upload?enrich=false", data={"category": "desk", "action": "writing_notebook", "location": "cafe", "shot": "close", "mood": "focused"},
+                        files={"file": ("s.mp4", f, "video/mp4")})
+    a = r.json()
+    assert r.status_code == 201 and a["action"] == "writing_notebook" and a["location"] == "cafe" and a["shot"] == "close" and a["mood"] == "focused"

@@ -1,4 +1,4 @@
-import type { Artifacts, Asset, Candidate, Persona, Plan, Project, SystemInfo, Template } from "./types"
+import type { Artifacts, Asset, Candidate, ClipAnalysis, Persona, Plan, Project, SystemInfo, Template } from "./types"
 
 export const API = import.meta.env.VITE_API_BASE || "/api"
 
@@ -33,6 +33,12 @@ export const api = {
   assets: () => req<Asset[]>("/assets"),
   searchAssets: (q: string) => req<Candidate[]>(`/assets/search?q=${encodeURIComponent(q)}&limit=30`),
   patchAsset: (id: string, patch: Partial<Asset>) => req<Asset>(`/assets/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  analyzeAsset: async (file: File) => {
+    const fd = new FormData(); fd.append("file", file)
+    const res = await fetch(`${API}/assets/analyze`, { method: "POST", body: fd })
+    if (!res.ok) { let d = res.statusText; try { d = (await res.json()).detail ?? d } catch { /* ignore */ } throw new Error(typeof d === "string" ? d : JSON.stringify(d)) }
+    return res.json() as Promise<ClipAnalysis>
+  },
   deleteAsset: (id: string, keepFile = false) => req<void>(`/assets/${id}${keepFile ? "?keep_file=true" : ""}`, { method: "DELETE" }),
   importAssets: () => req<{ created: number; updated: number; errors: string[] }>("/assets/import", { method: "POST" }),
   enrichAssets: () => req<{ enriched: number }>("/assets/enrich", { method: "POST" }),

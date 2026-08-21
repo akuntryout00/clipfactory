@@ -70,3 +70,10 @@ export interface SystemInfo {
   ffmpeg: string; render_ok: boolean; render_missing: string[]; assets_count: number; assets_approved: number
   projects_count: number; music_tracks: string[]
 }
+
+export interface ClipAnalysis {
+  description: string; tags: string[]; action: string; location: string; shot: string; mood: string
+  suggested_category: string; quality_score: number; notes: string | null
+  duration: number; width: number; height: number; fps: number; usable_start: number; usable_end: number
+  frames_analyzed: number; categories: string[]
+}

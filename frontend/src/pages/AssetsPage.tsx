@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { FolderInput, Sparkles, Trash2, Upload } from "lucide-react"
+import { FolderInput, Sparkles, Trash2, Upload, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { api, media } from "@/lib/api"
 import type { Asset } from "@/lib/types"
@@ -78,13 +78,30 @@ function UploadDialog({ open, onClose, categories }: { open: boolean; onClose: (
   const [approved, setApproved] = useState(true)
   const [pct, setPct] = useState(0)
   const [range, setRange] = useState<{ s: number; e: number; dur: number } | null>(null)
+  const [ai, setAi] = useState(true)
+  const [meta, setMeta] = useState({ action: "", location: "", shot: "", mood: "", quality: 0.8 })
+  const [notes, setNotes] = useState<string | null>(null)
   const cat = category === "__new__" ? newCat.trim().toLowerCase() : category
-  const reset = () => { setFile(null); setDescription(""); setTags(""); setPct(0); setNewCat(""); setRange(null) }
+  const reset = () => { setFile(null); setDescription(""); setTags(""); setPct(0); setNewCat(""); setRange(null); setMeta({ action: "", location: "", shot: "", mood: "", quality: 0.8 }); setNotes(null) }
+  const analyze = useMutation({
+    mutationFn: (f: File) => api.analyzeAsset(f),
+    onSuccess: a => {
+      setDescription(a.description); setTags(a.tags.join(", ")); setNotes(a.notes)
+      setMeta({ action: a.action, location: a.location, shot: a.shot, mood: a.mood, quality: a.quality_score })
+      if (a.suggested_category && categories.includes(a.suggested_category)) setCategory(a.suggested_category)
+      else if (a.suggested_category) { setCategory("__new__"); setNewCat(a.suggested_category) }
+      toast.success(`AI filled the fields from ${a.frames_analyzed} frames — review and upload`)
+    },
+    onError: e => toast.error(`AI autocomplete failed: ${e.message}`),
+  })
+  const pickFile = (f: File | null) => { setFile(f); if (f && ai) analyze.mutate(f) }
   const up = useMutation({
     mutationFn: () => {
       const fd = new FormData()
       fd.append("file", file!); fd.append("category", cat); fd.append("description", description); fd.append("tags", tags); fd.append("approved", String(approved))
       if (range) { fd.append("usable_start", String(range.s)); fd.append("usable_end", String(range.e)) }
+      if (meta.action) fd.append("action", meta.action); if (meta.location) fd.append("location", meta.location)
+      if (meta.shot) fd.append("shot", meta.shot); if (meta.mood) fd.append("mood", meta.mood); fd.append("quality_score", String(meta.quality))
       return api.uploadAsset(fd, setPct)
     },
     onSuccess: a => {
@@ -107,7 +124,7 @@ function UploadDialog({ open, onClose, categories }: { open: boolean; onClose: (
             ) : (
               <label className="block aspect-[9/16] cursor-pointer overflow-hidden rounded-md border border-dashed border-border bg-surface-2 hover:border-primary">
                 <span className="grid h-full place-items-center p-4 text-center text-xs text-muted-foreground">Click to choose a video<br />(.mp4 / .mov, vertical 9:16 preferred)</span>
-                <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" className="sr-only" onChange={e => setFile(e.target.files?.[0] ?? null)} />
+                <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" className="sr-only" onChange={e => pickFile(e.target.files?.[0] ?? null)} />
               </label>
             )}
             {/* hidden probe to learn the duration and seed the range to whole clip minus small margins */}
@@ -119,6 +136,13 @@ function UploadDialog({ open, onClose, categories }: { open: boolean; onClose: (
             </div>}
           </div>
           <div className="grid content-start gap-3 text-sm">
+            <label className={cn("flex items-center gap-2 rounded-md border px-3 py-2", ai ? "border-primary/50 bg-primary/5" : "border-border")}>
+              <input type="checkbox" checked={ai} onChange={e => setAi(e.target.checked)} className="scrub size-4" />
+              <Wand2 className="size-4 text-primary" />
+              <span className="flex-1"><b>AI autocomplete</b> — analyze the video frames and fill every field; you can still edit before uploading</span>
+              {analyze.isPending && <span className="animate-pulse font-mono text-[11px] text-primary">analyzing…</span>}
+              {file && !analyze.isPending && ai && <button type="button" className="font-mono text-[11px] text-primary underline" onClick={() => analyze.mutate(file)}>re-run</button>}
+            </label>
             <div>
               <Label className="text-xs text-muted-foreground">Category (folder)</Label>
               <div className="flex gap-2">
@@ -132,11 +156,23 @@ function UploadDialog({ open, onClose, categories }: { open: boolean; onClose: (
             <div><Label className="text-xs text-muted-foreground">Description (what is visible — drives B-roll matching)</Label>
               <Textarea rows={2} value={description} onChange={e => setDescription(e.target.value)} placeholder="POV hand writing in a notebook at a cafe table, coffee beside" /></div>
             <div><Label className="text-xs text-muted-foreground">Tags (comma separated)</Label><Input value={tags} onChange={e => setTags(e.target.value)} placeholder="notebook, writing, hand, cafe" /></div>
-            <label className="flex items-center gap-2"><input type="checkbox" checked={approved} onChange={e => setApproved(e.target.checked)} className="scrub size-4" /> Approved for use right away</label>
+            <div className="grid grid-cols-2 gap-2">
+              <div><Label className="text-xs text-muted-foreground">Action</Label><Input value={meta.action} onChange={e => setMeta(m => ({ ...m, action: e.target.value }))} placeholder="writing_notebook" /></div>
+              <div><Label className="text-xs text-muted-foreground">Location</Label><Input value={meta.location} onChange={e => setMeta(m => ({ ...m, location: e.target.value }))} placeholder="cafe" /></div>
+              <div><Label className="text-xs text-muted-foreground">Shot</Label>
+                <select value={meta.shot} onChange={e => setMeta(m => ({ ...m, shot: e.target.value }))} className="h-9 w-full rounded-md border border-input bg-card px-2">
+                  <option value="">—</option>{["close", "medium", "wide"].map(s => <option key={s}>{s}</option>)}</select></div>
+              <div><Label className="text-xs text-muted-foreground">Mood</Label>
+                <select value={meta.mood} onChange={e => setMeta(m => ({ ...m, mood: e.target.value }))} className="h-9 w-full rounded-md border border-input bg-card px-2">
+                  <option value="">—</option>{["neutral", "focused", "stressed", "relaxed", "happy", "energetic"].map(s => <option key={s}>{s}</option>)}</select></div>
+              <div><Label className="text-xs text-muted-foreground">Quality (0–1)</Label><Input type="number" step="0.05" min={0} max={1} value={meta.quality} onChange={e => setMeta(m => ({ ...m, quality: Number(e.target.value) }))} /></div>
+              <label className="flex items-end gap-2 pb-2"><input type="checkbox" checked={approved} onChange={e => setApproved(e.target.checked)} className="scrub size-4" /> Approved for use right away</label>
+            </div>
+            {notes && <p className="rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-[11px] text-muted-foreground"><span className="font-mono text-primary">AI note</span> {notes}</p>}
             {up.isPending && <div className="h-1.5 overflow-hidden rounded bg-surface-2"><div className="h-full bg-primary transition-[width]" style={{ width: `${pct}%` }} /></div>}
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="ghost" onClick={() => { reset(); onClose() }}>Cancel</Button>
-              <Button type="submit" disabled={!file || !cat || up.isPending}>{up.isPending ? (pct < 100 ? `Uploading ${pct}%` : "Analyzing with AI…") : "Upload clip"}</Button>
+              <Button type="submit" disabled={!file || !cat || up.isPending || analyze.isPending}>{up.isPending ? (pct < 100 ? `Uploading ${pct}%` : "Analyzing with AI…") : "Upload clip"}</Button>
             </div>
             <p className="text-[11px] text-muted-foreground">After upload the clip is enriched with AI automatically (tags, action, location, mood from your description) — a good description = better B-roll matching.</p>
           </div>
