@@ -203,7 +203,7 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
             "lab": {
                 "planner": st.lab_planner, "image_provider": st.lab_image_provider, "image_model": st.openai_image_model,
                 "image_size": st.openai_image_size, "video_provider": st.lab_video_provider, "video_model": st.google_video_model,
-                "google_key_set": bool(st.google_api_key),
+                "google_key_set": bool(st.google_api_key), "fal_key_set": bool(st.fal_key), "fal_default_model": st.lab_fal_model,
             },
         }
 

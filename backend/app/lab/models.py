@@ -33,7 +33,8 @@ class LabVideo(Base):
     final_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     final_duration: Mapped[float | None] = mapped_column(Float, nullable=True)
     image_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    video_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    video_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    video_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)  # omni | veo | fal:<model> | fake
     meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)

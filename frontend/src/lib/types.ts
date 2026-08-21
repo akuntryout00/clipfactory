@@ -69,7 +69,7 @@ export interface SystemInfo {
   elevenlabs_voice_id_set: boolean; default_persona: string; database_url: string; assets_dir: string; storage_dir: string
   ffmpeg: string; render_ok: boolean; render_missing: string[]; assets_count: number; assets_approved: number
   projects_count: number; music_tracks: string[]
-  lab?: { planner: string; image_provider: string; image_model: string; image_size: string; video_provider: string; video_model: string; google_key_set: boolean }
+  lab?: { planner: string; image_provider: string; image_model: string; image_size: string; video_provider: string; video_model: string; google_key_set: boolean; fal_key_set?: boolean; fal_default_model?: string }
 }
 
 export interface ClipAnalysis {
@@ -82,9 +82,11 @@ export interface ClipAnalysis {
 // ---- AI Lab (isolated module) ----
 export interface LabKeyframe { index: number; prompt: string; caption: string | null; status: string; error: string | null; version: number; image_url: string | null }
 export interface LabSegment { index: number; from_index: number; to_index: number; prompt: string | null; status: string; error: string | null; duration: number | null; video_url: string | null; editable: boolean; last_edit: string | null; version: number }
+export interface LabProvider { id: string; label: string; model: string; max_seconds: number; supports_edit: boolean; price_hint: string | null; note: string | null; available: boolean; needs: string | null }
 export interface LabEvent { stage: string; level: "info" | "success" | "warning" | "error" | string; message: string; created_at: string }
 export interface LabVideo {
   id: string; prompt: string; style: string | null; target_duration: number; n_segments: number; segment_seconds: number; style_guide: string | null
   status: string; stage_message: string | null; error: string | null; final_duration: number | null; image_model: string | null; video_model: string | null
+  video_provider: string | null; provider_label: string | null; supports_edit: boolean
   created_at: string; updated_at: string; keyframes: LabKeyframe[]; segments: LabSegment[]; video_url: string | null; events: LabEvent[]
 }

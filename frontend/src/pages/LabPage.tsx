@@ -74,7 +74,7 @@ export default function LabPage() {
                     </span>
                   </div>
                   <div className="mt-1.5 flex items-center justify-between font-mono text-[11px] text-muted-foreground">
-                    <span>{v.final_duration ? `${v.final_duration.toFixed(1)}s` : `${v.target_duration}s`} · {v.n_segments}×{v.segment_seconds}s · {fmtDate(v.created_at)}</span>
+                    <span className="truncate"><span className="text-foreground/80">{v.provider_label ?? v.video_model}</span> · {v.final_duration ? `${v.final_duration.toFixed(1)}s` : `${v.target_duration}s`} · {v.n_segments}×{v.segment_seconds}s · {fmtDate(v.created_at)}</span>
                     <span role="button" aria-label="Delete" className="rounded p-1 hover:bg-accent hover:text-fail"
                       onClick={e => { e.stopPropagation(); if (confirm(`Delete "${title(v.prompt)}"?`)) del.mutate(v.id) }}><Trash2 className="size-3.5" /></span>
                   </div>
@@ -90,20 +90,42 @@ export default function LabPage() {
   )
 }
 
+export function ProviderSelect({ value, onChange, exclude }: { value: string; onChange: (v: string) => void; exclude?: string | null }) {
+  const { data } = useQuery({ queryKey: ["lab-providers"], queryFn: lab.providers })
+  const rows = (data ?? []).filter(p => p.id !== "fake" || import.meta.env.DEV)
+  return (
+    <div className="grid gap-1.5">
+      {rows.filter(p => p.id !== exclude).map(p => (
+        <label key={p.id} className={cn("flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 text-xs", value === p.id ? "border-primary bg-primary/5" : "border-border hover:bg-accent/40", !p.available && "opacity-50")}>
+          <input type="radio" name="provider" className="scrub mt-0.5" checked={value === p.id} disabled={!p.available} onChange={() => onChange(p.id)} />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2"><b>{p.label}</b><span className="font-mono text-[10px] text-muted-foreground">{p.model}</span>
+              {p.supports_edit && <span className="rounded border border-primary/40 px-1 font-mono text-[9px] text-primary">clip edit</span>}</span>
+            <span className="block text-muted-foreground">{p.note} · clips ≤{p.max_seconds}s · {p.price_hint}{!p.available && p.needs ? ` · needs ${p.needs} in .env` : ""}</span>
+          </span>
+        </label>
+      ))}
+    </div>
+  )
+}
+
 function NewVideoDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const nav = useNavigate()
   const [prompt, setPrompt] = useState("")
   const [style, setStyle] = useState("")
   const [duration, setDuration] = useState(18)
-  const segs = Math.max(2, Math.ceil(duration / 10)), segLen = Math.max(4, Math.min(10, Math.round(duration / segs)))
+  const [provider, setProvider] = useState("omni")
+  const { data: provs } = useQuery({ queryKey: ["lab-providers"], queryFn: lab.providers })
+  const maxSeg = provs?.find(p => p.id === provider)?.max_seconds ?? 10
+  const segs = Math.max(2, Math.ceil(duration / maxSeg)), segLen = Math.max(4, Math.min(maxSeg, Math.round(duration / segs)))
   const create = useMutation({
-    mutationFn: () => lab.create({ prompt: prompt.trim(), target_duration: duration, style: style.trim() || null }),
+    mutationFn: () => lab.create({ prompt: prompt.trim(), target_duration: duration, style: style.trim() || null, video_provider: provider }),
     onSuccess: v => { toast.success("Started — planning the storyboard"); onClose(); nav(`/lab/${v.id}`) },
     onError: e => toast.error(e.message),
   })
   return (
     <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="font-heading">New AI video</DialogTitle>
           <DialogDescription>Write what should happen, pick a length. You'll review the keyframes before animation.</DialogDescription>
@@ -113,6 +135,10 @@ function NewVideoDialog({ open, onClose }: { open: boolean; onClose: () => void 
             <Label htmlFor="lp" className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">What video do you want?</Label>
             <Textarea id="lp" rows={5} autoFocus value={prompt} onChange={e => setPrompt(e.target.value)}
               placeholder="A solo founder's morning in a sunlit cafe: a steaming coffee, a laptop opening, typing, then stepping out into a bright city street. Warm cinematic light, calm and motivating." />
+          </div>
+          <div>
+            <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">Video model (animates the keyframes)</Label>
+            <ProviderSelect value={provider} onChange={setProvider} />
           </div>
           <div className="grid grid-cols-[1fr_200px] gap-4">
             <div>

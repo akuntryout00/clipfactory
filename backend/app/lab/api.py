@@ -24,6 +24,7 @@ class LabCreate(BaseModel):
     prompt: str = Field(min_length=5, max_length=2000)
     target_duration: float = Field(default=18, ge=15, le=25)
     style: str | None = Field(default=None, max_length=200)
+    video_provider: str | None = Field(default=None, description="omni | veo | fal:<model> | fake (default: configured)")
 
 
 class RegenBody(BaseModel):
@@ -55,6 +56,7 @@ class EventOut(BaseModel):
 class LabVideoOut(BaseModel):
     id: str; prompt: str; style: str | None; target_duration: float; n_segments: int; segment_seconds: int; style_guide: str | None
     status: str; stage_message: str | None; error: str | None; final_duration: float | None; image_model: str | None; video_model: str | None
+    video_provider: str | None = None; provider_label: str | None = None; supports_edit: bool = False
     created_at: datetime; updated_at: datetime; keyframes: list[KeyframeOut] = []; segments: list[SegmentOut] = []; video_url: str | None = None
     events: list[EventOut] = []
 
@@ -83,9 +85,14 @@ def _out(v: LabVideo, svc: LabService) -> LabVideoOut:
                        video_url=f"/lab/videos/{v.id}/segments/{s.index}/video?v={s.version or 0}" if s.video_path else None,
                        editable=bool(s.provider_ref), last_edit=s.last_edit, version=s.version or 0) for s in svc.segments(v.id)]
     evs = [EventOut(stage=e.stage, level=e.level, message=e.message, created_at=e.created_at) for e in svc.events(v.id)][-80:]
+    from app.lab.providers import provider_label
+
+    pid = v.video_provider or svc.default_provider_id()
+    supports_edit = pid in ("omni", "fake") or pid.startswith("fake:")
     return LabVideoOut(id=v.id, prompt=v.prompt, style=v.style, target_duration=v.target_duration, n_segments=v.n_segments, segment_seconds=v.segment_seconds,
                        style_guide=v.style_guide, status=v.status, stage_message=v.stage_message, error=v.error, final_duration=v.final_duration,
-                       image_model=v.image_model, video_model=v.video_model, created_at=v.created_at, updated_at=v.updated_at,
+                       image_model=v.image_model, video_model=v.video_model, video_provider=pid, provider_label=provider_label(pid), supports_edit=supports_edit,
+                       created_at=v.created_at, updated_at=v.updated_at,
                        keyframes=kfs, segments=segs, video_url=f"/lab/videos/{v.id}/video" if v.final_path and v.status == "DONE" else None, events=evs)
 
 
@@ -111,12 +118,19 @@ def _job(request: Request, video_id: str, op: Callable[[LabService], None], prov
     return {"id": video_id, "status": "accepted"}
 
 
+@router.get("/providers")
+def providers():
+    from app.lab.providers import list_video_providers
+
+    return list_video_providers()
+
+
 @router.post("/videos", response_model=LabVideoOut, status_code=201)
 def create(body: LabCreate, request: Request, db: Session = Depends(_db)):
     """Create instantly, then plan + generate keyframes in the background (watch `status`/`events`)."""
     svc = _svc(request, db)
     try:
-        v = svc.create(prompt=body.prompt, target_duration=body.target_duration, style=body.style)
+        v = svc.create(prompt=body.prompt, target_duration=body.target_duration, style=body.style, video_provider=body.video_provider)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
     out = _out(v, svc)
@@ -180,18 +194,17 @@ class CloneBody(BaseModel):
 @router.post("/videos/{video_id}/clone", response_model=LabVideoOut, status_code=201)
 def clone(video_id: str, body: CloneBody, request: Request, db: Session = Depends(_db)):
     """Duplicate a video (same storyboard + keyframes when possible) to compare providers or lengths side by side."""
-    _get(video_id, request, db)
+    v, svc = _get(video_id, request, db)
     try:
-        svc = _svc(request, db, body.video_provider)
-    except Exception as exc:  # noqa: BLE001
+        c = svc.clone(video_id, target_duration=body.target_duration, video_provider=body.video_provider)
+    except ValueError as exc:
         raise HTTPException(422, f"provider not available: {exc}")
-    c = svc.clone(video_id, target_duration=body.target_duration)
     out = _out(c, svc)
     if body.animate:
         if c.status == "IMAGES_READY":
-            _job(request, c.id, lambda s: s.animate(c.id, force=True), provider=body.video_provider)
+            _job(request, c.id, lambda s: s.animate(c.id, force=True))
         elif c.status == "PLANNING":
-            _job(request, c.id, lambda s: s.run_to_images(c.id), provider=body.video_provider)
+            _job(request, c.id, lambda s: s.run_to_images(c.id))
     return out
 
 

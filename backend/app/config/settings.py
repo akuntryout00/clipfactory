@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     google_video_model: str = "gemini-omni-flash-preview"  # Omni (Interactions API), up to ~10 s per clip
     google_veo_model: str = "veo-3.1-fast-generate-preview"  # alternative provider with true first/last-frame interpolation
     google_person_generation: str = "allow_adult"  # Veo filters people from image inputs otherwise
+    fal_key: str | None = None
+    lab_fal_model: str = "minimax-h3"    # default model when provider is plain "fal"
     lab_planner: str = "openai"          # openai | fake
     lab_image_provider: str = "openai"   # openai | fake
     lab_video_provider: str = "omni"     # omni | veo | fake

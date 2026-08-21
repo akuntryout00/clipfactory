@@ -363,6 +363,95 @@ class FakeVideoGen:
         return out_path
 
 
+# ---------------- fal.ai (multi-model) ----------------
+
+FAL_MODELS: dict[str, dict] = {
+    "minimax-h3": {
+        "endpoint": "minimax/h3/image-to-video", "label": "MiniMax H3 (Hailuo 3)", "max_seconds": 15, "min_seconds": 5,
+        "price_hint": "~$0.26/s 2K", "note": "first+last frame, 2K, native audio · i2v arena #2",
+        "args": lambda first, last, prompt, sec: {"prompt": prompt, "image_url": first, "end_image_url": last, "resolution": "2K",
+                                                  "duration": int(sec), "enable_prompt_expansion": False},
+    },
+    "seedance-2.0": {
+        "endpoint": "bytedance/seedance-2.0/image-to-video", "label": "Seedance 2.0 (720p)", "max_seconds": 15, "min_seconds": 4,
+        "price_hint": "~$0.30/s", "note": "first+last frame, audio · i2v arena #1",
+        "args": lambda first, last, prompt, sec: {"prompt": prompt, "image_url": first, "end_image_url": last, "aspect_ratio": "9:16",
+                                                  "resolution": "720p", "duration": str(int(sec)), "generate_audio": True},
+    },
+    "seedance-2.0-fast": {
+        "endpoint": "bytedance/seedance-2.0/fast/image-to-video", "label": "Seedance 2.0 Fast (720p)", "max_seconds": 15, "min_seconds": 4,
+        "price_hint": "~$0.24/s", "note": "cheaper/faster Seedance, first+last frame",
+        "args": lambda first, last, prompt, sec: {"prompt": prompt, "image_url": first, "end_image_url": last, "aspect_ratio": "9:16",
+                                                  "resolution": "720p", "duration": str(int(sec)), "generate_audio": True},
+    },
+    "kling-3.0-std": {
+        "endpoint": "fal-ai/kling-video/v3/standard/image-to-video", "label": "Kling 3.0 Standard", "max_seconds": 15, "min_seconds": 3,
+        "price_hint": "~$0.08–0.13/s", "note": "cheapest; first+last frame (aspect follows the image)",
+        "args": lambda first, last, prompt, sec: {"prompt": prompt, "start_image_url": first, "end_image_url": last,
+                                                  "duration": str(int(sec)), "generate_audio": False},
+    },
+}
+
+
+def _fal():
+    """Lazy import so tests can stub the client module."""
+    import fal_client
+
+    return fal_client
+
+
+def _download(url: str, dst: Path) -> None:
+    import httpx
+
+    with httpx.stream("GET", url, timeout=600, follow_redirects=True) as r:
+        r.raise_for_status()
+        with dst.open("wb") as f:
+            for chunk in r.iter_bytes():
+                f.write(chunk)
+
+
+class FalVideoGen:
+    """One provider class for every fal.ai video model in FAL_MODELS (official Seedance/MiniMax endpoints, Kling, …)."""
+
+    name = "fal"
+    last_ref = None
+
+    def __init__(self, model_key: str | None = None):
+        key = model_key or get_settings().lab_fal_model
+        if key not in FAL_MODELS:
+            raise ValueError(f"unknown fal model '{key}'; known: {', '.join(FAL_MODELS)}")
+        self.key = key
+        self.spec = FAL_MODELS[key]
+        self.model = self.spec["endpoint"]
+        self.max_seconds = int(self.spec["max_seconds"])
+        self.min_seconds = int(self.spec.get("min_seconds", 4))
+        import os
+
+        if get_settings().fal_key and not os.environ.get("FAL_KEY"):
+            os.environ["FAL_KEY"] = get_settings().fal_key  # fal_client reads FAL_KEY from the environment
+
+    def edit(self, *, ref: str, instruction: str, out_path: Path) -> Path:
+        raise NotImplementedError("fal models do not support conversational clip editing — re-animate with a new motion prompt")
+
+    def animate(self, *, first: Path, last: Path, prompt: str, seconds: int, out_path: Path) -> Path:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fal = _fal()
+        sec = max(self.min_seconds, min(self.max_seconds, int(seconds)))
+        first_url = fal.upload_file(first)
+        last_url = fal.upload_file(last)
+        args = self.spec["args"](first_url, last_url, prompt, sec)
+        result = fal.subscribe(self.model, arguments=args, with_logs=False)
+        video = (result or {}).get("video") or {}
+        url = video.get("url") if isinstance(video, dict) else None
+        if not url:
+            raise RuntimeError(f"fal returned no video: {str(result)[:300]}")
+        raw = out_path.with_suffix(".raw.mp4")
+        _download(url, raw)
+        _normalize_segment(raw, out_path)
+        raw.unlink(missing_ok=True)
+        return out_path
+
+
 # ---------------- factories ----------------
 
 def get_planner(name: str | None = None) -> Planner:
@@ -376,9 +465,41 @@ def get_image_gen(name: str | None = None) -> ImageGen:
 
 
 def get_video_gen(name: str | None = None) -> VideoGen:
+    """'omni' | 'veo' | 'fake' | 'fal' | 'fal:<model_key>'."""
     n = (name or get_settings().lab_video_provider).lower()
-    if n == "fake":
+    if n == "fake" or n.startswith("fake:"):
         return FakeVideoGen()
     if n in ("veo", "google"):
         return GoogleVideoGen()
-    return OmniVideoGen()
+    if n == "fal" or n.startswith("fal:"):
+        return FalVideoGen(n.split(":", 1)[1] if ":" in n else None)
+    if n == "omni":
+        return OmniVideoGen()
+    raise ValueError(f"unknown video provider '{name}'")
+
+
+def provider_label(provider_id: str | None) -> str:
+    pid = (provider_id or get_settings().lab_video_provider).lower()
+    if pid.startswith("fal:"):
+        spec = FAL_MODELS.get(pid.split(":", 1)[1])
+        return spec["label"] if spec else pid
+    return {"omni": "Gemini Omni Flash", "veo": "Google Veo 3.1", "fake": "Fake (offline)", "fal": "fal.ai"}.get(pid, pid)
+
+
+def list_video_providers() -> list[dict]:
+    """Metadata for the UI: which providers/models exist and whether their keys are configured."""
+    s = get_settings()
+    rows = [
+        {"id": "omni", "label": "Gemini Omni Flash", "model": s.google_video_model, "max_seconds": 10, "supports_edit": True,
+         "price_hint": "~$0.10/s", "note": "conversational clip edits; FIRST_FRAME + end reference (no true interpolation)",
+         "available": bool(s.google_api_key), "needs": "GOOGLE_API_KEY"},
+        {"id": "veo", "label": "Google Veo 3.1 (fast)", "model": s.google_veo_model, "max_seconds": 8, "supports_edit": False,
+         "price_hint": "~$0.15–0.40/s", "note": "true first+last frame interpolation", "available": bool(s.google_api_key), "needs": "GOOGLE_API_KEY"},
+    ]
+    for key, spec in FAL_MODELS.items():
+        rows.append({"id": f"fal:{key}", "label": spec["label"], "model": spec["endpoint"], "max_seconds": spec["max_seconds"],
+                     "supports_edit": False, "price_hint": spec.get("price_hint"), "note": spec.get("note"),
+                     "available": bool(s.fal_key), "needs": "FAL_KEY"})
+    rows.append({"id": "fake", "label": "Fake (offline test)", "model": "fake-video", "max_seconds": 8, "supports_edit": True,
+                 "price_hint": "free", "note": "cross-fade stand-in for tests", "available": True, "needs": None})
+    return rows

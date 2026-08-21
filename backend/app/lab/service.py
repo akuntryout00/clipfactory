@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.config.settings import get_settings
 from app.lab.models import LabEvent, LabKeyframe, LabSegment, LabVideo
 from app.lab.planning import segment_plan
-from app.lab.providers import ImageGen, Planner, VideoGen, get_image_gen, get_planner, get_video_gen
+from app.lab.providers import ImageGen, Planner, VideoGen, get_image_gen, get_planner, get_video_gen, provider_label
 
 log = logging.getLogger(__name__)
 MIN_TARGET, MAX_TARGET = 15.0, 25.0
@@ -22,9 +22,13 @@ MIN_TARGET, MAX_TARGET = 15.0, 25.0
 
 class LabService:
     def __init__(self, session: Session, image: ImageGen | None = None, video: VideoGen | None = None, planner: Planner | None = None,
-                 storage_dir: Path | None = None, progress: Callable[[str, str], None] | None = None):
+                 storage_dir: Path | None = None, progress: Callable[[str, str], None] | None = None,
+                 video_factory: Callable[[str], VideoGen] | None = None):
         self.session = session
         self._image, self._video, self._planner = image, video, planner
+        # per-video providers: video_factory(provider_id) → VideoGen (default get_video_gen); `video` (if given) is the fallback/default
+        self._video_factory = video_factory or get_video_gen
+        self._video_cache: dict[str, VideoGen] = {}
         self.storage_dir = Path(storage_dir or get_settings().storage_dir) / "lab"
         self.progress = progress or (lambda st, m: None)
 
@@ -39,6 +43,29 @@ class LabService:
         if self._video is None:
             self._video = get_video_gen()
         return self._video
+
+    def video_for(self, v_or_provider) -> VideoGen:
+        """Resolve the VideoGen for a LabVideo (its stored provider) or a provider id string."""
+        pid = v_or_provider if isinstance(v_or_provider, str) else getattr(v_or_provider, "video_provider", None)
+        if not pid:
+            return self.video
+        if pid not in self._video_cache:
+            if self._video is not None and pid in ("default",):
+                self._video_cache[pid] = self.video
+            else:
+                self._video_cache[pid] = self._video_factory(pid)
+        return self._video_cache[pid]
+
+    def _vg(self, v: LabVideo) -> VideoGen:
+        """Explicit `video` object (tests / overrides) wins; otherwise the video's stored provider via the factory."""
+        if self._video is not None:
+            return self.video
+        return self.video_for(v) if v.video_provider else self.video
+
+    def default_provider_id(self) -> str:
+        if self._video is not None:
+            return getattr(self._video, "name", "fake")
+        return get_settings().lab_video_provider
 
     @property
     def planner(self) -> Planner:
@@ -87,17 +114,19 @@ class LabService:
         self._log(v, "FAILED", f"{stage} failed: {exc}", level="error")
 
     # ---------- step 0: create (instant) ----------
-    def create(self, prompt: str, target_duration: float, style: str | None = None) -> LabVideo:
+    def create(self, prompt: str, target_duration: float, style: str | None = None, video_provider: str | None = None) -> LabVideo:
         if not prompt or len(prompt.strip()) < 5:
             raise ValueError("describe the video you want (at least a few words)")
         if not (MIN_TARGET <= target_duration <= MAX_TARGET):
             raise ValueError(f"target_duration must be {MIN_TARGET:.0f}-{MAX_TARGET:.0f} s")
-        n, seg = segment_plan(target_duration, max_seg=getattr(self.video, "max_seconds", 8))
+        pid = video_provider or self.default_provider_id()
+        vg = self.video_for(pid) if video_provider else self.video
+        n, seg = segment_plan(target_duration, max_seg=getattr(vg, "max_seconds", 8))
         v = LabVideo(prompt=prompt.strip(), style=style, target_duration=target_duration, n_segments=n, segment_seconds=seg,
-                     image_model=getattr(self.image, "model", None), video_model=getattr(self.video, "model", None), status="PLANNING")
+                     image_model=getattr(self.image, "model", None), video_model=getattr(vg, "model", None), video_provider=pid, status="PLANNING")
         self.session.add(v)
         self.session.commit()
-        self._log(v, "CREATED", f"Video created · {n + 1} keyframes planned as {n} × {seg}s clips (target {target_duration:.0f}s)")
+        self._log(v, "CREATED", f"Video created · {provider_label(pid)} · {n + 1} keyframes planned as {n} × {seg}s clips (target {target_duration:.0f}s)")
         return v
 
     # ---------- step 1: storyboard plan (LLM) ----------
@@ -222,7 +251,8 @@ class LabService:
         kfs = {k.index: k for k in self.keyframes(video_id)}
         if not kfs or any(k.status != "DONE" or not k.image_path for k in kfs.values()):
             raise RuntimeError("generate all keyframe images first")
-        v.video_model = getattr(self.video, "model", None) or v.video_model
+        vg = self._vg(v)
+        v.video_model = getattr(vg, "model", None) or v.video_model
         segs = self.segments(video_id)
         self._status(v, "ANIMATING", f"Animating {len(segs)} segments with {v.video_model} ({v.segment_seconds}s each)…")
         try:
@@ -236,17 +266,17 @@ class LabService:
                 out = self.dir(v.id) / f"seg_{s.index:02d}.mp4"
                 first, last = Path(kfs[s.from_index].image_path), Path(kfs[s.to_index].image_path)
                 motion = s.prompt or "smooth natural motion between the two frames"
-                builder = getattr(self.video, "build_prompt", None)
+                builder = getattr(vg, "build_prompt", None)
                 prompt = builder(motion, v.segment_seconds, v.style_guide or "") if builder else f"{motion}. {v.style_guide or ''} Vertical 9:16 video, cinematic, no text."
                 try:
-                    self.video.animate(first=first, last=last, prompt=prompt, seconds=v.segment_seconds, out_path=out)
+                    vg.animate(first=first, last=last, prompt=prompt, seconds=v.segment_seconds, out_path=out)
                 except Exception as exc:  # noqa: BLE001
                     s.status, s.error = "FAILED", str(exc)
                     self.session.commit()
                     self._log(v, "SEGMENT", f"Segment {s.index + 1}/{len(segs)} failed: {exc}", level="error")
                     raise
                 s.video_path, s.duration, s.status, s.error = str(out), _duration(out), "DONE", None
-                s.provider_ref = getattr(self.video, "last_ref", None)
+                s.provider_ref = getattr(vg, "last_ref", None)
                 s.version = (s.version or 0) + 1
                 self.session.commit()
                 self._log(v, "SEGMENT", f"Segment {s.index + 1}/{len(segs)} ready ({time.time() - t0:.0f}s, {s.duration:.1f}s clip)", level="success")
@@ -274,29 +304,30 @@ class LabService:
         kfs = {k.index: k for k in self.keyframes(video_id)}
         total = len(self.segments(video_id))
         out = self.dir(v.id) / f"seg_{seg.index:02d}.mp4"
+        vg = self._vg(v)
         self._status(v, "ANIMATING", f"Redoing segment {index + 1}/{total}…")
         seg.status, seg.error = "GENERATING", None
         self.session.commit()
         t0 = time.time()
         try:
             if edit_instruction:
-                if not seg.provider_ref or not hasattr(self.video, "edit"):
+                if not seg.provider_ref or not hasattr(vg, "edit"):
                     raise RuntimeError("this clip cannot be edited conversationally (no provider reference) — use a new motion prompt instead")
                 self._log(v, "SEGMENT", f"Segment {index + 1}/{total}: editing clip with {v.video_model} — “{edit_instruction}”…")
-                self.video.edit(ref=seg.provider_ref, instruction=edit_instruction, out_path=out)
+                vg.edit(ref=seg.provider_ref, instruction=edit_instruction, out_path=out)
                 seg.last_edit = edit_instruction
             else:
                 if prompt:
                     seg.prompt = prompt.strip()
                 first, last = Path(kfs[seg.from_index].image_path), Path(kfs[seg.to_index].image_path)
                 motion = seg.prompt or "smooth natural motion between the two frames"
-                builder = getattr(self.video, "build_prompt", None)
+                builder = getattr(vg, "build_prompt", None)
                 full = builder(motion, v.segment_seconds, v.style_guide or "") if builder else f"{motion}. {v.style_guide or ''} Vertical 9:16 video, cinematic, no text."
                 self._log(v, "SEGMENT", f"Segment {index + 1}/{total}: re-animating with {v.video_model} — “{motion[:80]}”…")
-                self.video.animate(first=first, last=last, prompt=full, seconds=v.segment_seconds, out_path=out)
+                vg.animate(first=first, last=last, prompt=full, seconds=v.segment_seconds, out_path=out)
                 seg.last_edit = None
             seg.video_path, seg.duration, seg.status, seg.error = str(out), _duration(out), "DONE", None
-            seg.provider_ref = getattr(self.video, "last_ref", None) or seg.provider_ref
+            seg.provider_ref = getattr(vg, "last_ref", None) or seg.provider_ref
             seg.version = (seg.version or 0) + 1
             self.session.commit()
             self._log(v, "SEGMENT", f"Segment {index + 1}/{total} ready ({time.time() - t0:.0f}s)", level="success")
@@ -312,18 +343,25 @@ class LabService:
             raise
         return v
 
-    def clone(self, video_id: str, target_duration: float | None = None) -> LabVideo:
+    def clone(self, video_id: str, target_duration: float | None = None, video_provider: str | None = None) -> LabVideo:
         """Duplicate a video to compare providers/settings: same prompt/storyboard; keyframes are copied when the new
-        segment plan (this service's video provider) keeps the same count, otherwise the clone must be re-planned."""
+        segment plan (for the clone's provider) keeps the same count, otherwise the clone must be re-planned."""
         src = self.get(video_id)
+        if video_provider:
+            pid, vg = video_provider, self.video_for(video_provider)
+        elif self._video is not None:
+            pid, vg = self.default_provider_id(), self.video
+        else:
+            pid = src.video_provider or self.default_provider_id()
+            vg = self.video_for(pid)
         target = target_duration if target_duration is not None else src.target_duration
-        n, seg = segment_plan(target, max_seg=getattr(self.video, "max_seconds", 8))
+        n, seg = segment_plan(target, max_seg=getattr(vg, "max_seconds", 8))
         c = LabVideo(prompt=src.prompt, style=src.style, target_duration=target, n_segments=n, segment_seconds=seg,
-                     image_model=src.image_model, video_model=getattr(self.video, "model", None), status="PLANNING",
+                     image_model=src.image_model, video_model=getattr(vg, "model", None), video_provider=pid, status="PLANNING",
                      meta={"cloned_from": src.id})
         self.session.add(c)
         self.session.commit()
-        self._log(c, "CREATED", f"Cloned from {src.id} · provider {getattr(self.video, 'name', '?')} ({getattr(self.video, 'model', '?')}) · {n} × {seg}s")
+        self._log(c, "CREATED", f"Cloned from {src.id} · {provider_label(pid)} ({getattr(vg, 'model', '?')}) · {n} × {seg}s")
         src_kfs = self.keyframes(src.id)
         if src_kfs and len(src_kfs) == n + 1 and all(k.status == "DONE" and k.image_path and Path(k.image_path).is_file() for k in src_kfs):
             c.style_guide = src.style_guide
@@ -335,7 +373,7 @@ class LabService:
             for i in range(n):
                 self.session.add(LabSegment(video_id=c.id, index=i, from_index=i, to_index=i + 1, prompt=src_segs[i].prompt if i in src_segs else None))
             self.session.commit()
-            self._status(c, "IMAGES_READY", f"Keyframes copied from {src.id} — press Animate to render with {getattr(self.video, 'model', '?')}", level="success")
+            self._status(c, "IMAGES_READY", f"Keyframes copied from {src.id} — press Animate to render with {getattr(vg, 'model', '?')}", level="success")
         else:
             self._log(c, "PLANNING", f"Segment plan differs from the source ({n + 1} keyframes needed) — storyboard must be re-planned")
         return c
@@ -345,7 +383,7 @@ class LabService:
         v = self.get(video_id)
         if not (MIN_TARGET <= target_duration <= MAX_TARGET):
             raise ValueError(f"target_duration must be {MIN_TARGET:.0f}-{MAX_TARGET:.0f} s")
-        n, seg = segment_plan(target_duration, max_seg=getattr(self.video, "max_seconds", 8))
+        n, seg = segment_plan(target_duration, max_seg=getattr(self._vg(v), "max_seconds", 8))
         same_n = n == v.n_segments
         v.target_duration, v.n_segments, v.segment_seconds = target_duration, n, seg
         v.final_path, v.final_duration = None, None

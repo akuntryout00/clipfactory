@@ -279,3 +279,23 @@ def test_clone_copies_keyframes_and_animates_with_other_provider(lab, tmp_path):
     assert all(Path(k.image_path).is_file() and str(c2.id) in k.image_path for k in svc3.keyframes(c2.id))
     svc3.animate(c2.id)
     assert svc3.get(c2.id).status == "DONE"
+
+
+def test_lab_api_providers_and_create_with_provider(tmp_path):
+    from app.api.main import create_app
+    from app.projects.jobs import InlineJobRunner
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'lab2.db'}", future=True, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    app = create_app(session_factory=factory, jobs=InlineJobRunner(), service_kwargs=dict(storage_dir=tmp_path / "storage"),
+                     lab_kwargs=dict(image=FakeImageGen(), planner=FakePlanner()))
+    with TestClient(app) as c:
+        provs = c.get("/lab/providers").json()
+        assert any(p["id"] == "fake" for p in provs) and any(p["id"].startswith("fal:") for p in provs)
+        r = c.post("/lab/videos", json={"prompt": "Cozy cafe morning, cinematic", "target_duration": 15, "video_provider": "fake"})
+        assert r.status_code == 201, r.text
+        g = c.get(f"/lab/videos/{r.json()['id']}").json()
+        assert g["video_provider"] == "fake" and g["provider_label"] and g["supports_edit"] is True
+        assert g["status"] == "IMAGES_READY"
+        assert c.post("/lab/videos", json={"prompt": "Cozy cafe morning, cinematic", "video_provider": "fal:nope"}).status_code == 422

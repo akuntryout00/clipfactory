@@ -1,4 +1,4 @@
-import type { Artifacts, Asset, Candidate, ClipAnalysis, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
+import type { Artifacts, Asset, Candidate, ClipAnalysis, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
 
 export const API = import.meta.env.VITE_API_BASE || "/api"
 
@@ -61,9 +61,11 @@ export const api = {
 }
 
 export const lab = {
+  providers: () => req<LabProvider[]>("/lab/providers"),
   list: () => req<LabVideo[]>("/lab/videos"),
   get: (id: string) => req<LabVideo>(`/lab/videos/${id}`),
-  create: (body: { prompt: string; target_duration: number; style?: string | null }) => req<LabVideo>("/lab/videos", { method: "POST", body: JSON.stringify(body) }),
+  create: (body: { prompt: string; target_duration: number; style?: string | null; video_provider?: string | null }) => req<LabVideo>("/lab/videos", { method: "POST", body: JSON.stringify(body) }),
+  clone: (id: string, body: { video_provider?: string | null; target_duration?: number | null; animate?: boolean }) => req<LabVideo>(`/lab/videos/${id}/clone`, { method: "POST", body: JSON.stringify(body) }),
   generateImages: (id: string, onlyMissing = false) => req<unknown>(`/lab/videos/${id}/generate-images${onlyMissing ? "?only_missing=true" : ""}`, { method: "POST" }),
   regenerate: (id: string, index: number, prompt?: string | null) => req<unknown>(`/lab/videos/${id}/keyframes/${index}/regenerate`, { method: "POST", body: JSON.stringify({ prompt: prompt ?? null }) }),
   retry: (id: string) => req<unknown>(`/lab/videos/${id}/retry`, { method: "POST" }),

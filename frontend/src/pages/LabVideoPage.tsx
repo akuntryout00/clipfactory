@@ -1,11 +1,12 @@
 import { useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, ArrowLeft, CheckCircle2, Clock, Download, Film, Loader2, RefreshCw, RotateCcw, Wand2 } from "lucide-react"
+import { AlertTriangle, ArrowLeft, CheckCircle2, Clock, Download, Film, GitCompare, Loader2, RefreshCw, RotateCcw, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { fmtDate, lab } from "@/lib/api"
 import type { LabKeyframe, LabSegment, LabVideo } from "@/lib/types"
 import { PageHeader } from "@/components/PageHeader"
+import { ProviderSelect } from "@/pages/LabPage"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -41,6 +42,13 @@ export default function LabVideoPage() {
   const [editing, setEditing] = useState<LabKeyframe | null>(null)
   const [editingSeg, setEditingSeg] = useState<LabSegment | null>(null)
   const [lengthOpen, setLengthOpen] = useState(false)
+  const [compareOpen, setCompareOpen] = useState(false)
+  const nav = useNavigate()
+  const cloneMut = useMutation({
+    mutationFn: (provider: string) => lab.clone(id, { video_provider: provider, animate: true }),
+    onSuccess: c => { toast.success(`Comparison started with ${c.provider_label ?? c.video_provider}`); setCompareOpen(false); qc.invalidateQueries({ queryKey: ["lab"] }); nav(`/lab/${c.id}`) },
+    onError: e => toast.error(e.message),
+  })
   const refresh = () => { qc.invalidateQueries({ queryKey: ["lab", id] }); qc.invalidateQueries({ queryKey: ["lab"] }) }
   const redoSeg = useMutation({
     mutationFn: ({ index, body }: { index: number; body: { prompt?: string | null; edit_instruction?: string | null } }) => lab.regenerateSegment(id, index, body),
@@ -73,13 +81,15 @@ export default function LabVideoPage() {
         actions={<>
           {failed && <Button size="sm" onClick={() => retry.mutate()}><RotateCcw className="size-4" /> Retry</Button>}
           <Button variant="outline" size="sm" disabled={running} onClick={() => setLengthOpen(true)}><Clock className="size-4" /> Change length</Button>
+          <Button variant="outline" size="sm" disabled={running} onClick={() => setCompareOpen(true)} title="Clone this storyboard and render it with another model"><GitCompare className="size-4" /> Compare with…</Button>
           <Button variant="outline" size="sm" disabled={running || !v.keyframes.length} onClick={() => gen.mutate(false)}><RefreshCw className="size-4" /> Regenerate all images</Button>
           <Button size="sm" disabled={running || !allImages} onClick={() => anim.mutate(v.status === "DONE")}><Film className="size-4" /> {v.status === "DONE" ? "Animate again" : "Animate video"}</Button>
         </>}>
         <div className="mt-2 flex flex-wrap items-center gap-3 font-mono text-[11px] text-muted-foreground">
           <span title={v.prompt} className="max-w-[60ch] truncate">{v.prompt}</span>
           <span>{v.id}</span><span>{v.target_duration}s target · {v.n_segments} × {v.segment_seconds}s</span>
-          <span>images {v.image_model} · video {v.video_model}</span><span>{fmtDate(v.created_at)}</span>
+          <span className="rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-primary">{v.provider_label ?? v.video_provider} · {v.video_model}</span>
+          <span>images {v.image_model}</span><span>{fmtDate(v.created_at)}</span>
         </div>
       </PageHeader>
 
@@ -203,20 +213,39 @@ export default function LabVideoPage() {
       </div>
 
       <EditKeyframeDialog kf={editing} video={v} onClose={() => setEditing(null)} onSubmit={(index, prompt) => regen.mutate({ index, prompt })} busy={regen.isPending} />
-      <EditSegmentDialog seg={editingSeg} onClose={() => setEditingSeg(null)} busy={redoSeg.isPending}
+      <EditSegmentDialog seg={editingSeg} supportsEdit={v.supports_edit} onClose={() => setEditingSeg(null)} busy={redoSeg.isPending}
         onSubmit={(index, body) => redoSeg.mutate({ index, body })} />
+      <Dialog open={compareOpen} onOpenChange={o => { if (!o) setCompareOpen(false) }}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Compare with another model</DialogTitle>
+            <DialogDescription>Clones this video (same storyboard and keyframes when the clip count matches) and renders it with the chosen model. Current: {v.provider_label}.</DialogDescription>
+          </DialogHeader>
+          <CompareBody exclude={v.video_provider} busy={cloneMut.isPending} onSubmit={p => cloneMut.mutate(p)} />
+        </DialogContent>
+      </Dialog>
       <ChangeLengthDialog open={lengthOpen} video={v} onClose={() => setLengthOpen(false)} busy={setLen.isPending} onSubmit={d => setLen.mutate(d)} />
     </div>
   )
 }
 
-function EditSegmentDialog({ seg, onClose, onSubmit, busy }: { seg: LabSegment | null; onClose: () => void; busy: boolean
+function CompareBody({ exclude, busy, onSubmit }: { exclude: string | null; busy: boolean; onSubmit: (p: string) => void }) {
+  const [p, setP] = useState("")
+  return (
+    <div className="space-y-3">
+      <ProviderSelect value={p} onChange={setP} exclude={exclude} />
+      <div className="flex justify-end"><Button disabled={!p || busy} onClick={() => onSubmit(p)}><GitCompare className="size-4" /> Clone & render</Button></div>
+    </div>
+  )
+}
+
+function EditSegmentDialog({ seg, supportsEdit, onClose, onSubmit, busy }: { seg: LabSegment | null; supportsEdit: boolean; onClose: () => void; busy: boolean
   onSubmit: (index: number, body: { prompt?: string | null; edit_instruction?: string | null }) => void }) {
   const [mode, setMode] = useState<"motion" | "edit">("motion")
   const [p, setP] = useState("")
   const [instr, setInstr] = useState("")
   const cur = seg ? (p || seg.prompt || "") : ""
-  const canEdit = !!seg?.editable && !!seg?.video_url
+  const canEdit = supportsEdit && !!seg?.editable && !!seg?.video_url
   return (
     <Dialog open={!!seg} onOpenChange={o => { if (!o) { setP(""); setInstr(""); setMode("motion"); onClose() } }}>
       <DialogContent className="sm:max-w-3xl">
@@ -232,7 +261,7 @@ function EditSegmentDialog({ seg, onClose, onSubmit, busy }: { seg: LabSegment |
             <div className="space-y-3 text-sm">
               <div className="flex gap-1 rounded-md border border-border p-1">
                 <button type="button" onClick={() => setMode("motion")} className={cn("flex-1 rounded px-2 py-1.5 text-xs", mode === "motion" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>Re-animate with a new motion prompt</button>
-                <button type="button" disabled={!canEdit} title={canEdit ? "" : "Available after the clip is generated with Gemini Omni"} onClick={() => setMode("edit")}
+                <button type="button" disabled={!canEdit} title={canEdit ? "" : "Conversational editing is available for clips generated with Gemini Omni"} onClick={() => setMode("edit")}
                   className={cn("flex-1 rounded px-2 py-1.5 text-xs disabled:opacity-40", mode === "edit" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>Edit the existing clip (Omni)</button>
               </div>
               {mode === "motion" ? (<>
@@ -259,7 +288,7 @@ function EditSegmentDialog({ seg, onClose, onSubmit, busy }: { seg: LabSegment |
 
 function ChangeLengthDialog({ open, video, onClose, onSubmit, busy }: { open: boolean; video: LabVideo; onClose: () => void; onSubmit: (d: number) => void; busy: boolean }) {
   const [d, setD] = useState(video.target_duration)
-  const maxSeg = Math.max(4, Math.round(video.target_duration / Math.max(1, video.n_segments)) <= 8 && video.video_model?.startsWith("veo") ? 8 : 10)
+  const maxSeg = video.video_provider?.startsWith("fal:") ? 15 : video.video_provider === "veo" ? 8 : video.video_provider === "fake" ? 8 : 10
   const segs = Math.max(2, Math.ceil(d / maxSeg)), segLen = Math.max(4, Math.min(maxSeg, Math.round(d / segs)))
   const sameCount = segs === video.n_segments
   return (

@@ -51,6 +51,7 @@ def _ensure_columns(engine) -> None:
     insp = inspect(engine)
     wanted = {
         "lab_segments": {"provider_ref": "VARCHAR(256)", "last_edit": "TEXT", "version": "INTEGER DEFAULT 0"},
+        "lab_videos": {"video_provider": "VARCHAR(64)"},
     }
     with engine.begin() as conn:
         for table, cols in wanted.items():
