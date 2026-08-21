@@ -169,6 +169,7 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
     @app.post("/assets/upload", response_model=AssetOut, status_code=201)
     async def asset_upload(request: Request, file: UploadFile = File(...), category: str = Form(...),
                            description: str | None = Form(None), tags: str | None = Form(None), approved: bool = Form(False),
+                           usable_start: float | None = Form(None), usable_end: float | None = Form(None),
                            db: Session = Depends(get_db)):
         """Add a single B-roll clip: saves under assets/<category>/ (never overwrites), probes it, creates the asset row."""
         import re
@@ -194,7 +195,8 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
         rel = dest.relative_to(assets_dir(request)).as_posix()
         try:
             asset = register_asset_file(db, assets_dir(request), rel, description=description or None,
-                                        tags=(tags or "").split(","), approved=approved)
+                                        tags=(tags or "").split(","), approved=approved,
+                                        usable_start=usable_start, usable_end=usable_end)
         except Exception as exc:  # noqa: BLE001
             dest.unlink(missing_ok=True)
             raise HTTPException(400, f"could not read video: {exc}")

@@ -121,3 +121,14 @@ def test_delete_asset_removes_row_and_file(client, mini_assets):
     # keep_file=true keeps the file on disk but removes the library entry
     r = client.delete("/assets/asset_002?keep_file=true")
     assert r.status_code == 204 and (mini_assets / "desk" / "coffee_pour_01.mp4").is_file()
+
+
+def test_upload_accepts_usable_range_and_clamps(client, tmp_path):
+    from tests.conftest import make_clip
+    clip = make_clip(tmp_path / "r.mp4", seconds=4)
+    with clip.open("rb") as f:
+        r = client.post("/assets/upload", data={"category": "desk", "usable_start": "0.8", "usable_end": "9.9"},
+                        files={"file": ("r.mp4", f, "video/mp4")})
+    assert r.status_code == 201, r.text
+    a = r.json()
+    assert a["usable_start"] == 0.8 and abs(a["usable_end"] - a["duration"]) < 0.05  # end clamped to duration

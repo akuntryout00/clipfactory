@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { RangeTrimmer } from "@/components/RangeTrimmer"
 
 export default function AssetsPage() {
   const qc = useQueryClient()
@@ -76,12 +77,14 @@ function UploadDialog({ open, onClose, categories }: { open: boolean; onClose: (
   const [tags, setTags] = useState("")
   const [approved, setApproved] = useState(true)
   const [pct, setPct] = useState(0)
+  const [range, setRange] = useState<{ s: number; e: number; dur: number } | null>(null)
   const cat = category === "__new__" ? newCat.trim().toLowerCase() : category
-  const reset = () => { setFile(null); setDescription(""); setTags(""); setPct(0); setNewCat("") }
+  const reset = () => { setFile(null); setDescription(""); setTags(""); setPct(0); setNewCat(""); setRange(null) }
   const up = useMutation({
     mutationFn: () => {
       const fd = new FormData()
       fd.append("file", file!); fd.append("category", cat); fd.append("description", description); fd.append("tags", tags); fd.append("approved", String(approved))
+      if (range) { fd.append("usable_start", String(range.s)); fd.append("usable_end", String(range.e)) }
       return api.uploadAsset(fd, setPct)
     },
     onSuccess: a => { toast.success(`Added ${a.id} (${a.file})`); qc.invalidateQueries({ queryKey: ["assets"] }); reset(); onClose() },
@@ -90,18 +93,28 @@ function UploadDialog({ open, onClose, categories }: { open: boolean; onClose: (
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file])
   return (
     <Dialog open={open} onOpenChange={o => { if (!o) { reset(); onClose() } }}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-4xl">
         <DialogHeader><DialogTitle className="font-heading">Add a B-roll clip</DialogTitle></DialogHeader>
-        <form className="grid gap-4 md:grid-cols-[200px_1fr]" onSubmit={e => { e.preventDefault(); if (file && cat) up.mutate() }}>
+        <form className="grid gap-4 md:grid-cols-[300px_1fr]" onSubmit={e => { e.preventDefault(); if (file && cat) up.mutate() }}>
           <div>
-            <label className="block aspect-[9/16] cursor-pointer overflow-hidden rounded-md border border-dashed border-border bg-surface-2 hover:border-primary">
-              {previewUrl ? <video src={previewUrl} muted playsInline controls className="h-full w-full object-cover" />
-                : <span className="grid h-full place-items-center p-4 text-center text-xs text-muted-foreground">Click to choose a video<br />(.mp4 / .mov, vertical 9:16 preferred)</span>}
-              <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" className="sr-only" onChange={e => setFile(e.target.files?.[0] ?? null)} />
-            </label>
-            {file && <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{file.name} · {(file.size / 1e6).toFixed(1)} MB</div>}
+            {previewUrl ? (
+              <RangeTrimmer src={previewUrl} duration={range?.dur ?? 0} start={range?.s ?? 0} end={range?.e ?? 0}
+                onChange={(s, e) => setRange(r => ({ s, e, dur: r?.dur ?? e }))} />
+            ) : (
+              <label className="block aspect-[9/16] cursor-pointer overflow-hidden rounded-md border border-dashed border-border bg-surface-2 hover:border-primary">
+                <span className="grid h-full place-items-center p-4 text-center text-xs text-muted-foreground">Click to choose a video<br />(.mp4 / .mov, vertical 9:16 preferred)</span>
+                <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" className="sr-only" onChange={e => setFile(e.target.files?.[0] ?? null)} />
+              </label>
+            )}
+            {/* hidden probe to learn the duration and seed the range to whole clip minus small margins */}
+            {previewUrl && !range && <video src={previewUrl} className="hidden" preload="metadata"
+              onLoadedMetadata={e => { const d = e.currentTarget.duration; const m = Math.min(0.2, d * 0.05); setRange({ s: Math.round(m * 20) / 20, e: Math.round((d - m) * 20) / 20, dur: d }) }} />}
+            {file && <div className="mt-1 flex items-center justify-between gap-2 font-mono text-[11px] text-muted-foreground">
+              <span className="truncate">{file.name} · {(file.size / 1e6).toFixed(1)} MB</span>
+              <button type="button" className="text-primary underline" onClick={() => { setFile(null); setRange(null) }}>change file</button>
+            </div>}
           </div>
-          <div className="grid gap-3 text-sm">
+          <div className="grid content-start gap-3 text-sm">
             <div>
               <Label className="text-xs text-muted-foreground">Category (folder)</Label>
               <div className="flex gap-2">
@@ -146,15 +159,16 @@ function AssetDialog({ asset, onClose }: { asset: Asset | null; onClose: () => v
   const set = (k: keyof Asset, v: unknown) => setForm(f => ({ ...f, [k]: v }))
   return (
     <Dialog open={!!asset} onOpenChange={o => { if (!o) { setForm({}); onClose() } }}>
-      <DialogContent className="sm:max-w-4xl">
+      <DialogContent className="sm:max-w-5xl">
         {a && (<>
           <DialogHeader><DialogTitle className="font-heading">{a.id} <span className="font-mono text-sm font-normal text-muted-foreground">{a.file}</span></DialogTitle></DialogHeader>
-          <div className="grid gap-5 md:grid-cols-[220px_1fr]">
+          <div className="grid gap-5 md:grid-cols-[300px_1fr]">
             <div className="space-y-2">
-              <video src={media.assetFile(a.id)} controls muted playsInline className="aspect-[9/16] w-full rounded-md bg-black" />
+              <RangeTrimmer src={media.assetFile(a.id)} duration={a.duration} start={a.usable_start} end={a.usable_end}
+                onChange={(s, e) => setForm(f => ({ ...f, usable_start: s, usable_end: e }))} />
               <div className="font-mono text-[11px] text-muted-foreground">{a.width}×{a.height} · {a.fps?.toFixed(2)} fps · {a.duration.toFixed(2)}s · used ×{a.usage_count}</div>
             </div>
-            <form className="grid grid-cols-2 gap-3 text-sm" onSubmit={e => { e.preventDefault(); save.mutate() }}>
+            <form className="grid grid-cols-2 content-start gap-3 text-sm" onSubmit={e => { e.preventDefault(); save.mutate() }}>
               <div className="col-span-2"><Label className="text-xs text-muted-foreground">Description</Label><Textarea rows={2} value={a.description ?? ""} onChange={e => set("description", e.target.value)} /></div>
               <div className="col-span-2"><Label className="text-xs text-muted-foreground">Tags (comma separated)</Label><Input value={(a.tags ?? []).join(", ")} onChange={e => set("tags", e.target.value.split(",").map(s => s.trim()).filter(Boolean))} /></div>
               <div><Label className="text-xs text-muted-foreground">Action</Label><Input value={a.action ?? ""} onChange={e => set("action", e.target.value)} /></div>
@@ -169,8 +183,8 @@ function AssetDialog({ asset, onClose }: { asset: Asset | null; onClose: () => v
                 </select></div>
               <div><Label className="text-xs text-muted-foreground">Quality (0–1)</Label><Input type="number" step="0.05" min={0} max={1} value={a.quality_score} onChange={e => set("quality_score", Number(e.target.value))} /></div>
               <div className="flex items-end gap-2"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={a.approved} onChange={e => set("approved", e.target.checked)} className="scrub size-4" /> Approved for use</label></div>
-              <div><Label className="text-xs text-muted-foreground">Usable start (s)</Label><Input type="number" step="0.1" min={0} value={a.usable_start} onChange={e => set("usable_start", Number(e.target.value))} /></div>
-              <div><Label className="text-xs text-muted-foreground">Usable end (s)</Label><Input type="number" step="0.1" min={0} value={a.usable_end} onChange={e => set("usable_end", Number(e.target.value))} /></div>
+              <div><Label className="text-xs text-muted-foreground">Usable start (s) — drag the left handle or type</Label><Input type="number" step="0.05" min={0} max={a.duration} value={a.usable_start} onChange={e => set("usable_start", Number(e.target.value))} /></div>
+              <div><Label className="text-xs text-muted-foreground">Usable end (s)</Label><Input type="number" step="0.05" min={0} max={a.duration} value={a.usable_end} onChange={e => set("usable_end", Number(e.target.value))} /></div>
               <div className="col-span-2 flex items-center gap-2 pt-2">
                 <Button type="button" variant="ghost" className="text-fail hover:text-fail" disabled={del.isPending}
                   onClick={() => { if (confirm(`Delete ${a.id} (${a.file}) from the library and disk? Existing renders are not affected.`)) del.mutate() }}>
