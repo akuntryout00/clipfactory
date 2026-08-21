@@ -87,10 +87,11 @@ def test_retry_resumes_from_failed_stage(lab, monkeypatch):
         svc.generate_images(v.id)
     v = svc.get(v.id)
     assert v.status == "FAILED" and "image API down" in v.error
-    assert [k.status for k in svc.keyframes(v.id)] == ["DONE", "FAILED", "PENDING"]
+    statuses = [k.status for k in svc.keyframes(v.id)]
+    assert statuses.count("FAILED") == 1 and "GENERATING" not in statuses  # others finished (parallel) or stayed pending
     svc.retry(v.id)  # resumes: only missing images, no re-plan
     v = svc.get(v.id)
-    assert v.status == "IMAGES_READY" and calls["n"] == 4  # 1 ok + 1 fail + 2 resumed
+    assert v.status == "IMAGES_READY" and calls["n"] == 4  # 3 first round (1 failed) + 1 resumed
 
 
 def test_generate_images_then_animate_produces_916_mp4(lab):
@@ -173,3 +174,23 @@ def test_animate_force_redoes_finished_segments(lab):
     svc.animate(v.id, force=True)  # force → re-rendered
     assert [p.stat().st_mtime_ns for p in first_paths] != mtimes
     assert svc.get(v.id).status == "DONE"
+
+
+def test_generate_images_runs_keyframes_concurrently(tmp_path):
+    import time
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, expire_on_commit=False)()
+
+    class SlowImage(FakeImageGen):
+        def generate(self, *, prompt, out_path):
+            time.sleep(0.4)
+            return super().generate(prompt=prompt, out_path=out_path)
+
+    svc = LabService(s, image=SlowImage(), video=FakeVideoGen(), planner=FakePlanner(), storage_dir=tmp_path / "storage", image_concurrency=3)
+    v = svc.create(prompt="A quiet cafe morning", target_duration=18)  # 4 keyframes
+    svc.plan(v.id)
+    t0 = time.time()
+    svc.generate_images(v.id)
+    assert time.time() - t0 < 1.4  # 4 × 0.4 s would be 1.6 s sequentially (+ffmpeg); concurrency=3 → ~2 rounds
+    assert all(k.status == "DONE" for k in svc.keyframes(v.id))
