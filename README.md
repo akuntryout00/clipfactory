@@ -10,13 +10,14 @@ Topic + Template → Script → ElevenLabs voice (+alignment) → Scene plan →
 ```
 
 ## Stack
-Python 3.12 · FastAPI · SQLAlchemy/PostgreSQL · FFmpeg (libass captions) · OpenAI (structured outputs) · ElevenLabs (timestamps) · Docker Compose.
-No frontend in the MVP — CLI (`ttcf`) + REST API (`/docs`).
+Backend: Python 3.12 · FastAPI · SQLAlchemy/PostgreSQL · FFmpeg (libass captions) · OpenAI (structured outputs) · ElevenLabs (timestamps).
+Frontend: React 19 + TypeScript (Vite) · Tailwind v4 · shadcn/ui · TanStack Query — separate `frontend/` app served by nginx, proxying `/api` → backend.
+Docker Compose runs `db` + `api` (:8000) + `web` (:3000). CLI `ttcf` works without the UI.
 
 ## Quick start
 ```bash
 cp .env.example .env           # fill OPENAI_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
-make build && make up          # db + api  → http://localhost:8000/docs
+make build && make up          # db + api + web → UI http://localhost:3000 · API docs http://localhost:8000/docs
 make import                    # scan ./assets → metadata (ffprobe + assets/broll_database.json)
 make doctor                    # keys / ffmpeg / dirs check
 make generate TEMPLATE=list_v1 TOPIC="3 productivity habits that waste your time"
@@ -35,8 +36,20 @@ Dry run without any API keys: set `LLM_PROVIDER=fake` and `VOICE_PROVIDER=fake` 
 | `projects suggest ID SCENE` · `projects set-asset ID SCENE ASSET_ID` | manual B-roll override (PRD §49) |
 | `batch /app/configs/batch_30.json` | 30-video validation batch (PRD §51); writes `review.json` per project |
 
+## Web UI (http://localhost:3000)
+| screen | what you can do |
+|---|---|
+| **Projects** | every project with status, template, length, version counters (script/voice/plan/render), filters, delete |
+| **Generate** | pick template (structure + closing shown), topic, 15–25 s target → starts the background job and opens the project |
+| **Project** | 9:16 player + download, voice player, stage progress (live), **timeline** drawn from the Video JSON (scene widths = durations, overlay markers, caption chunks, playhead synced with the player), scenes list with per-scene **Change** (suggested clips with thumbnails → re-render), script versions, renders + QC, event log, raw Video JSON; buttons Regenerate script / Change assets / Render again / Retry / Approve |
+| **B-roll** | grid with thumbnails, usage counts, category filter, search; click a clip → preview + edit tags/action/location/shot/mood/quality/usable range/approved; Import folder, Enrich with AI |
+| **Templates** | templates (sections, weights, shot/overlay rules, closing) and personas (identity, pillars, tone, tools, products policy, voice) |
+| **System** | providers/keys, ffmpeg + libass, library counts, music tracks, paths |
+
+Dev: `make web-dev` (Vite on :3000 proxying to the api container on :8000).
+
 ## REST API (PRD §47)
-`POST /projects` · `GET /projects[/{id}]` · `POST /projects/{id}/generate | regenerate-script | change-assets | render | retry` (202, background job) · `POST /projects/{id}/approve` · `GET /projects/{id}/video | plan` · `GET /projects/{id}/scenes/{n}/suggestions` · `POST /projects/{id}/scenes/{n}/asset` · `GET/PATCH /assets[/{id}]` · `GET /assets/search?q=` · `POST /assets/import` · `GET /templates` · `GET /personas` · `GET /health`
+`POST /projects` · `GET /projects[/{id}]` · `DELETE /projects/{id}` · `GET /projects/{id}/artifacts | voice | renders/{v}/video` · `GET /assets/{id}/file | thumbnail` · `POST /assets/enrich` · `GET /system` · · `POST /projects/{id}/generate | regenerate-script | change-assets | render | retry` (202, background job) · `POST /projects/{id}/approve` · `GET /projects/{id}/video | plan` · `GET /projects/{id}/scenes/{n}/suggestions` · `POST /projects/{id}/scenes/{n}/asset` · `GET/PATCH /assets[/{id}]` · `GET /assets/search?q=` · `POST /assets/import` · `GET /templates` · `GET /personas` · `GET /health`
 
 Statuses: `DRAFT → GENERATING_SCRIPT → GENERATING_VOICE → PLANNING → SELECTING_ASSETS → GENERATING_CAPTIONS → RENDERING → READY → APPROVED` (or `FAILED`, with `error` = `stage: reason`; `retry` resumes from that stage).
 

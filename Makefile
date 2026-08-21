@@ -3,9 +3,9 @@
 COMPOSE=docker compose
 RUN=$(COMPOSE) run --rm api
 
-build:        ## build the api image
-	$(COMPOSE) build api
-up:           ## start db + api (http://localhost:8000/docs)
+build:        ## build api + web images
+	$(COMPOSE) build api web
+up:           ## start db + api + web UI (http://localhost:3000, API docs :8000/docs)
 	$(COMPOSE) up -d
 down:
 	$(COMPOSE) down
@@ -23,3 +23,5 @@ generate:     ## make TEMPLATE=story_v1 TOPIC="Stop taking meeting notes manuall
 	$(RUN) ttcf generate --template $(TEMPLATE) --topic "$(TOPIC)"
 batch:        ## run the 30-video validation batch
 	$(RUN) ttcf batch /app/configs/batch_30.json
+web-dev:      ## run the frontend dev server against the api container (http://localhost:3000)
+	cd frontend && npm install && npm run dev
