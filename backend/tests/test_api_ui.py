@@ -81,3 +81,43 @@ def test_artifacts_and_media_after_generate(client):
     assert v.status_code == 200 and v.headers["content-type"].startswith("audio/")
     rv = client.get(f"/projects/{pid}/renders/1/video")
     assert rv.status_code == 200 and rv.headers["content-type"] == "video/mp4"
+
+
+def test_upload_single_video_creates_asset_file_and_row(client, mini_assets, tmp_path):
+    from tests.conftest import make_clip
+    clip = make_clip(tmp_path / "new.mp4", seconds=3)
+    with clip.open("rb") as f:
+        r = client.post("/assets/upload", data={"category": "desk", "description": "hand closes notebook", "tags": "notebook, hand", "approved": "true"},
+                        files={"file": ("My Clip (1).mp4", f, "video/mp4")})
+    assert r.status_code == 201, r.text
+    a = r.json()
+    assert a["file"] == "desk/my_clip_1.mp4" and a["approved"] is True and a["duration"] > 2.5
+    assert "notebook" in a["tags"] and a["description"] == "hand closes notebook"
+    assert (mini_assets / "desk" / "my_clip_1.mp4").is_file()
+    assert a["id"] == "asset_007"
+    # same name again → does not overwrite, gets a suffix
+    with clip.open("rb") as f:
+        r2 = client.post("/assets/upload", data={"category": "desk"}, files={"file": ("My Clip (1).mp4", f, "video/mp4")})
+    assert r2.status_code == 201 and r2.json()["file"] == "desk/my_clip_1_2.mp4" and r2.json()["approved"] is False
+
+
+def test_upload_rejects_non_video_and_bad_category(client, tmp_path):
+    txt = tmp_path / "x.txt"; txt.write_text("hi")
+    with txt.open("rb") as f:
+        assert client.post("/assets/upload", data={"category": "desk"}, files={"file": ("x.txt", f, "text/plain")}).status_code == 400
+    from tests.conftest import make_clip
+    clip = make_clip(tmp_path / "c.mp4", seconds=2)
+    with clip.open("rb") as f:
+        assert client.post("/assets/upload", data={"category": "../etc"}, files={"file": ("c.mp4", f, "video/mp4")}).status_code == 400
+
+
+def test_delete_asset_removes_row_and_file(client, mini_assets):
+    assert (mini_assets / "desk" / "typing_01.mp4").is_file()
+    r = client.delete("/assets/asset_001")
+    assert r.status_code == 204
+    assert client.get("/assets/asset_001/file").status_code == 404
+    assert not (mini_assets / "desk" / "typing_01.mp4").exists()
+    assert client.delete("/assets/asset_001").status_code == 404
+    # keep_file=true keeps the file on disk but removes the library entry
+    r = client.delete("/assets/asset_002?keep_file=true")
+    assert r.status_code == 204 and (mini_assets / "desk" / "coffee_pour_01.mp4").is_file()

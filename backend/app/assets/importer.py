@@ -128,3 +128,23 @@ def import_assets(session: Session, assets_dir: Path, approve_unseeded: bool = F
             report.updated += 1
     session.commit()
     return report
+
+
+def register_asset_file(session: Session, assets_dir: Path, rel: str, *, description: str | None = None,
+                        tags: list[str] | None = None, approved: bool = False, quality_score: float = 0.8) -> Asset:
+    """Create one Asset row for a file already placed under assets_dir (used by single-file upload)."""
+    meta = probe_video(assets_dir / rel)
+    tags = [t.strip().lower() for t in (tags or []) if t.strip()]
+    sem = infer_semantics(rel, description, tags)
+    margin = min(0.2, meta.duration * 0.05)
+    asset = Asset(
+        id=_next_asset_id(session, set()), file=rel, description=description, tags=tags,
+        action=sem["action"], location=sem["location"], mood=sem["mood"], shot=None,
+        duration=round(meta.duration, 3), width=meta.width, height=meta.height, fps=round(meta.fps, 3),
+        orientation=meta.orientation, codec=meta.codec, usable_start=round(margin, 2),
+        usable_end=round(max(meta.duration - margin, margin), 2), quality_score=quality_score, approved=approved,
+    )
+    session.add(asset)
+    session.commit()
+    session.refresh(asset)
+    return asset

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { FolderInput, Sparkles } from "lucide-react"
+import { FolderInput, Sparkles, Trash2, Upload } from "lucide-react"
 import { toast } from "sonner"
 import { api, media } from "@/lib/api"
 import type { Asset } from "@/lib/types"
@@ -18,6 +18,7 @@ export default function AssetsPage() {
   const [q, setQ] = useState("")
   const [cat, setCat] = useState("ALL")
   const [edit, setEdit] = useState<Asset | null>(null)
+  const [adding, setAdding] = useState(false)
   const imp = useMutation({ mutationFn: api.importAssets, onSuccess: r => { toast.success(`Imported: ${r.created} new, ${r.updated} refreshed`); qc.invalidateQueries({ queryKey: ["assets"] }) }, onError: e => toast.error(e.message) })
   const enrich = useMutation({ mutationFn: api.enrichAssets, onSuccess: r => { toast.success(`Enriched ${r.enriched} clips`); qc.invalidateQueries({ queryKey: ["assets"] }) }, onError: e => toast.error(e.message) })
   const cats = useMemo(() => Array.from(new Set((data ?? []).map(a => a.file.split("/")[0]))).sort(), [data])
@@ -29,6 +30,7 @@ export default function AssetsPage() {
     <div>
       <PageHeader eyebrow="Asset library" title="B-roll"
         actions={<>
+          <Button size="sm" onClick={() => setAdding(true)}><Upload className="size-4" /> Add video</Button>
           <Button variant="outline" size="sm" onClick={() => imp.mutate()} disabled={imp.isPending}><FolderInput className="size-4" /> {imp.isPending ? "Importing…" : "Import folder"}</Button>
           <Button variant="outline" size="sm" onClick={() => enrich.mutate()} disabled={enrich.isPending}><Sparkles className="size-4" /> {enrich.isPending ? "Enriching…" : "Enrich with AI"}</Button>
         </>}>
@@ -60,7 +62,70 @@ export default function AssetsPage() {
         ))}
       </div>
       <AssetDialog asset={edit} onClose={() => setEdit(null)} />
+      <UploadDialog open={adding} onClose={() => setAdding(false)} categories={cats} />
     </div>
+  )
+}
+
+function UploadDialog({ open, onClose, categories }: { open: boolean; onClose: () => void; categories: string[] }) {
+  const qc = useQueryClient()
+  const [file, setFile] = useState<File | null>(null)
+  const [category, setCategory] = useState(categories[0] ?? "desk")
+  const [newCat, setNewCat] = useState("")
+  const [description, setDescription] = useState("")
+  const [tags, setTags] = useState("")
+  const [approved, setApproved] = useState(true)
+  const [pct, setPct] = useState(0)
+  const cat = category === "__new__" ? newCat.trim().toLowerCase() : category
+  const reset = () => { setFile(null); setDescription(""); setTags(""); setPct(0); setNewCat("") }
+  const up = useMutation({
+    mutationFn: () => {
+      const fd = new FormData()
+      fd.append("file", file!); fd.append("category", cat); fd.append("description", description); fd.append("tags", tags); fd.append("approved", String(approved))
+      return api.uploadAsset(fd, setPct)
+    },
+    onSuccess: a => { toast.success(`Added ${a.id} (${a.file})`); qc.invalidateQueries({ queryKey: ["assets"] }); reset(); onClose() },
+    onError: e => toast.error(e.message),
+  })
+  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file])
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) { reset(); onClose() } }}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader><DialogTitle className="font-heading">Add a B-roll clip</DialogTitle></DialogHeader>
+        <form className="grid gap-4 md:grid-cols-[200px_1fr]" onSubmit={e => { e.preventDefault(); if (file && cat) up.mutate() }}>
+          <div>
+            <label className="block aspect-[9/16] cursor-pointer overflow-hidden rounded-md border border-dashed border-border bg-surface-2 hover:border-primary">
+              {previewUrl ? <video src={previewUrl} muted playsInline controls className="h-full w-full object-cover" />
+                : <span className="grid h-full place-items-center p-4 text-center text-xs text-muted-foreground">Click to choose a video<br />(.mp4 / .mov, vertical 9:16 preferred)</span>}
+              <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" className="sr-only" onChange={e => setFile(e.target.files?.[0] ?? null)} />
+            </label>
+            {file && <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{file.name} · {(file.size / 1e6).toFixed(1)} MB</div>}
+          </div>
+          <div className="grid gap-3 text-sm">
+            <div>
+              <Label className="text-xs text-muted-foreground">Category (folder)</Label>
+              <div className="flex gap-2">
+                <select value={category} onChange={e => setCategory(e.target.value)} className="h-9 flex-1 rounded-md border border-input bg-card px-2">
+                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                  <option value="__new__">+ new category…</option>
+                </select>
+                {category === "__new__" && <Input placeholder="e.g. meeting" value={newCat} onChange={e => setNewCat(e.target.value)} className="flex-1" />}
+              </div>
+            </div>
+            <div><Label className="text-xs text-muted-foreground">Description (what is visible — drives B-roll matching)</Label>
+              <Textarea rows={2} value={description} onChange={e => setDescription(e.target.value)} placeholder="POV hand writing in a notebook at a cafe table, coffee beside" /></div>
+            <div><Label className="text-xs text-muted-foreground">Tags (comma separated)</Label><Input value={tags} onChange={e => setTags(e.target.value)} placeholder="notebook, writing, hand, cafe" /></div>
+            <label className="flex items-center gap-2"><input type="checkbox" checked={approved} onChange={e => setApproved(e.target.checked)} className="scrub size-4" /> Approved for use right away</label>
+            {up.isPending && <div className="h-1.5 overflow-hidden rounded bg-surface-2"><div className="h-full bg-primary transition-[width]" style={{ width: `${pct}%` }} /></div>}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="ghost" onClick={() => { reset(); onClose() }}>Cancel</Button>
+              <Button type="submit" disabled={!file || !cat || up.isPending}>{up.isPending ? `Uploading ${pct}%` : "Upload clip"}</Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Tip: run “Enrich with AI” afterwards to get richer tags from the description.</p>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -71,6 +136,11 @@ function AssetDialog({ asset, onClose }: { asset: Asset | null; onClose: () => v
   const save = useMutation({
     mutationFn: () => api.patchAsset(asset!.id, form),
     onSuccess: () => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["assets"] }); setForm({}); onClose() },
+    onError: e => toast.error(e.message),
+  })
+  const del = useMutation({
+    mutationFn: () => api.deleteAsset(asset!.id),
+    onSuccess: () => { toast.success(`Deleted ${asset!.id}`); qc.invalidateQueries({ queryKey: ["assets"] }); setForm({}); onClose() },
     onError: e => toast.error(e.message),
   })
   const set = (k: keyof Asset, v: unknown) => setForm(f => ({ ...f, [k]: v }))
@@ -101,7 +171,12 @@ function AssetDialog({ asset, onClose }: { asset: Asset | null; onClose: () => v
               <div className="flex items-end gap-2"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={a.approved} onChange={e => set("approved", e.target.checked)} className="scrub size-4" /> Approved for use</label></div>
               <div><Label className="text-xs text-muted-foreground">Usable start (s)</Label><Input type="number" step="0.1" min={0} value={a.usable_start} onChange={e => set("usable_start", Number(e.target.value))} /></div>
               <div><Label className="text-xs text-muted-foreground">Usable end (s)</Label><Input type="number" step="0.1" min={0} value={a.usable_end} onChange={e => set("usable_end", Number(e.target.value))} /></div>
-              <div className="col-span-2 flex justify-end gap-2 pt-2">
+              <div className="col-span-2 flex items-center gap-2 pt-2">
+                <Button type="button" variant="ghost" className="text-fail hover:text-fail" disabled={del.isPending}
+                  onClick={() => { if (confirm(`Delete ${a.id} (${a.file}) from the library and disk? Existing renders are not affected.`)) del.mutate() }}>
+                  <Trash2 className="size-4" /> Delete clip
+                </Button>
+                <span className="flex-1" />
                 <Button type="button" variant="ghost" onClick={() => { setForm({}); onClose() }}>Cancel</Button>
                 <Button type="submit" disabled={save.isPending || Object.keys(form).length === 0}>Save changes</Button>
               </div>

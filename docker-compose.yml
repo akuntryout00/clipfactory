@@ -27,7 +27,7 @@ services:
       ASSETS_DIR: /app/assets
       CONFIGS_DIR: /app/configs
     volumes:
-      - ./assets:/app/assets:ro
+      - ./assets:/app/assets
       - ./storage:/app/storage
       - ./configs:/app/configs
       - ./backend/app:/app/backend/app
