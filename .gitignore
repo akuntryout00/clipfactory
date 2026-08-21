@@ -1,22 +1,59 @@
-# python
+# ---------- secrets / env ----------
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# ---------- python ----------
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 .venv/
+venv/
 *.egg-info/
 .pytest_cache/
-# env
-.env
-backend/.env
-# storage (generated artifacts)
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# ---------- node / frontend ----------
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+yarn-error.log*
+
+# ---------- generated artifacts (storage) ----------
 storage/*
 !storage/music/
 storage/music/*
 !storage/music/README.md
-# media
-assets/
+
+# ---------- media: B-roll videos stay out of git, metadata stays in ----------
+assets/**
+!assets/
+!assets/*.json
+!assets/*.csv
+!assets/_rejected/
+!assets/_rejected/*.md
+
+# legacy manual outputs
 output/
+
+# ---------- IDE / OS ----------
 .DS_Store
-# frontend
-frontend/node_modules/
-frontend/dist/
-frontend/.env
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ---------- docker / local ----------
+*.log
+pgdata/
