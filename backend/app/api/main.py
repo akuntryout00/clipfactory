@@ -6,11 +6,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Callable, Iterator
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.api.media import ranged_file, thumbnail_for
 from app.api.schemas import (
     Accepted, AssetOut, AssetPatch, ProjectCreate, ProjectOut, SceneAssetOverride,
 )
@@ -46,6 +48,13 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
         app.state.jobs.shutdown()
 
     app = FastAPI(title="TikTok Content Factory", version="0.1.0", lifespan=lifespan)
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Range", "Accept-Ranges"])
+
+    def storage_dir(request: Request) -> Path:
+        return Path(request.app.state.service_kwargs.get("storage_dir") or get_settings().storage_dir)
+
+    def assets_dir(request: Request) -> Path:
+        return Path(request.app.state.service_kwargs.get("assets_dir") or get_settings().assets_dir)
 
     def get_db(request: Request) -> Iterator[Session]:
         s: Session = request.app.state.session_factory()
@@ -92,6 +101,44 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
             out.append(d)
         return out
 
+    @app.get("/system")
+    def system(request: Request, db: Session = Depends(get_db)):
+        from sqlalchemy import func
+
+        from app.renderer.ffmpeg import check_render_capabilities
+
+        st = get_settings()
+        kw = request.app.state.service_kwargs
+        llm = kw.get("llm")
+        voice = kw.get("voice")
+        missing = check_render_capabilities()
+        ffmpeg_ver = ""
+        try:
+            import subprocess
+
+            ffmpeg_ver = subprocess.run([st.ffmpeg_bin, "-version"], capture_output=True, text=True).stdout.splitlines()[0]
+        except Exception:  # noqa: BLE001
+            ffmpeg_ver = "not found"
+        return {
+            "llm_provider": getattr(llm, "name", None) or st.llm_provider,
+            "openai_model": st.openai_model,
+            "openai_key_set": bool(st.openai_api_key),
+            "voice_provider": getattr(voice, "name", None) or st.voice_provider,
+            "elevenlabs_key_set": bool(st.elevenlabs_api_key),
+            "elevenlabs_voice_id_set": bool(st.elevenlabs_voice_id),
+            "default_persona": st.default_persona,
+            "database_url": st.database_url.split("@")[-1] if "@" in st.database_url else st.database_url,
+            "assets_dir": str(assets_dir(request)),
+            "storage_dir": str(storage_dir(request)),
+            "ffmpeg": ffmpeg_ver,
+            "render_ok": not missing,
+            "render_missing": missing,
+            "assets_count": db.execute(select(func.count()).select_from(Asset)).scalar_one(),
+            "assets_approved": db.execute(select(func.count()).select_from(Asset).where(Asset.approved.is_(True))).scalar_one(),
+            "projects_count": db.execute(select(func.count()).select_from(VideoProject)).scalar_one(),
+            "music_tracks": sorted(p.name for p in (storage_dir(request) / "music").glob("*.mp3")) if (storage_dir(request) / "music").is_dir() else [],
+        }
+
     # ---------- assets ----------
     @app.get("/assets", response_model=list[AssetOut])
     def assets(db: Session = Depends(get_db), approved: bool | None = None):
@@ -110,6 +157,33 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
         assets_dir = Path(request.app.state.service_kwargs.get("assets_dir") or get_settings().assets_dir)
         rep = import_assets(db, assets_dir, approve_unseeded=approve_unseeded)
         return {"created": rep.created, "updated": rep.updated, "errors": rep.errors}
+
+    @app.post("/assets/enrich")
+    def assets_enrich(request: Request, db: Session = Depends(get_db), overwrite: bool = False):
+        from app.assets.enrich import enrich_library
+        from app.llm.base import get_llm
+
+        llm = request.app.state.service_kwargs.get("llm") or get_llm()
+        return {"enriched": enrich_library(db, llm, overwrite=overwrite)}
+
+    @app.get("/assets/{asset_id}/file")
+    def asset_file(asset_id: str, request: Request, db: Session = Depends(get_db)):
+        a = db.get(Asset, asset_id)
+        if a is None:
+            raise HTTPException(404, "asset not found")
+        return ranged_file(assets_dir(request) / a.file, request, media_type="video/mp4")
+
+    @app.get("/assets/{asset_id}/thumbnail")
+    def asset_thumbnail(asset_id: str, request: Request, db: Session = Depends(get_db)):
+        a = db.get(Asset, asset_id)
+        if a is None:
+            raise HTTPException(404, "asset not found")
+        src = assets_dir(request) / a.file
+        if not src.is_file():
+            raise HTTPException(404, "asset file missing")
+        at = min(max(a.usable_start or 0.5, 0.3), max((a.duration or 1) - 0.2, 0.3))
+        path = thumbnail_for(src, storage_dir(request) / "thumbs" / "assets", a.id, at=at)
+        return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
 
     @app.patch("/assets/{asset_id}", response_model=AssetOut)
     def asset_patch(asset_id: str, patch: AssetPatch, db: Session = Depends(get_db)):
@@ -203,6 +277,58 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
             raise HTTPException(409, str(exc))
         return _project_out(p, db)
 
+    @app.delete("/projects/{project_id}", status_code=204)
+    def delete_project(project_id: str, request: Request, db: Session = Depends(get_db)):
+        import shutil
+
+        p = _require(project_id, db)
+        if request.app.state.jobs.is_running(project_id):
+            raise HTTPException(409, "a job is running for this project")
+        db.delete(p)
+        db.commit()
+        shutil.rmtree(storage_dir(request) / "projects" / project_id, ignore_errors=True)
+        shutil.rmtree(storage_dir(request) / "renders" / project_id, ignore_errors=True)
+        return Response(status_code=204)
+
+    @app.get("/projects/{project_id}/artifacts")
+    def project_artifacts(project_id: str, request: Request, db: Session = Depends(get_db)):
+        """Every versioned artifact of a project (PRD §45) for the UI's history view."""
+        import json as _json
+        import re
+
+        p = _require(project_id, db)
+        d = storage_dir(request) / "projects" / project_id
+        scripts, plans = [], []
+        if d.is_dir():
+            for f in sorted(d.glob("script_v*.json"), key=lambda x: int(re.findall(r"\d+", x.stem)[0])):
+                scripts.append({"version": int(re.findall(r"\d+", f.stem)[0]), "content": _json.loads(f.read_text())})
+            for f in sorted(d.glob("plan_v*.json"), key=lambda x: int(re.findall(r"\d+", x.stem)[0])):
+                plans.append({"version": int(re.findall(r"\d+", f.stem)[0]), **_json.loads(f.read_text())})
+        voices = [{"version": v.version, "script_version": v.script_version, "duration": v.duration, "provider": v.provider,
+                   "url": f"/projects/{project_id}/voices/{v.version}/audio"} for v in sorted(p.voices, key=lambda v: v.version)]
+        renders = [{"id": r.id, "version": r.version, "plan_version": r.plan_version, "voice_version": r.voice_version, "status": r.status,
+                    "qc": r.qc, "error": r.error, "created_at": r.created_at, "seed": r.seed,
+                    "url": f"/projects/{project_id}/renders/{r.version}/video" if r.status == "DONE" else None}
+                   for r in sorted(p.renders, key=lambda r: r.version)]
+        return {"scripts": scripts, "voices": voices, "plans": plans, "renders": renders}
+
+    @app.get("/projects/{project_id}/voice")
+    def project_voice(project_id: str, request: Request, db: Session = Depends(get_db)):
+        p = _require(project_id, db)
+        if p.voice_version == 0:
+            raise HTTPException(404, "no voice yet")
+        return ranged_file(storage_dir(request) / "projects" / project_id / f"voice_v{p.voice_version}.mp3", request, media_type="audio/mpeg")
+
+    @app.get("/projects/{project_id}/voices/{version}/audio")
+    def project_voice_version(project_id: str, version: int, request: Request, db: Session = Depends(get_db)):
+        _require(project_id, db)
+        return ranged_file(storage_dir(request) / "projects" / project_id / f"voice_v{version}.mp3", request, media_type="audio/mpeg")
+
+    @app.get("/projects/{project_id}/renders/{version}/video")
+    def project_render_video(project_id: str, version: int, request: Request, db: Session = Depends(get_db)):
+        _require(project_id, db)
+        return ranged_file(storage_dir(request) / "renders" / project_id / f"render_v{version}.mp4", request, media_type="video/mp4")
+
     @app.get("/projects/{project_id}/plan")
     def get_plan(project_id: str, request: Request, db: Session = Depends(get_db)):
         p = _require(project_id, db)
@@ -216,7 +342,7 @@ def create_app(session_factory: sessionmaker | None = None, jobs: JobRunner | No
         path = svc(db, request).project_dir(project_id) / "final.mp4"
         if not p.current_render_id or not path.is_file():
             raise HTTPException(404, "no render available")
-        return FileResponse(path, media_type="video/mp4", filename=f"{project_id}.mp4")
+        return ranged_file(path, request, media_type="video/mp4")
 
     @app.get("/projects/{project_id}/scenes/{order}/suggestions")
     def scene_suggestions(project_id: str, order: int, request: Request, db: Session = Depends(get_db)):
