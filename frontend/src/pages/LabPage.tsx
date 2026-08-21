@@ -1,11 +1,10 @@
-import { useState } from "react"
-import type React from "react"
+import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { FlaskConical, Plus, Trash2 } from "lucide-react"
+import { Check, ChevronDown, FlaskConical, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { fmtDate, lab } from "@/lib/api"
-import type { LabVideo } from "@/lib/types"
+import type { LabProvider, LabVideo } from "@/lib/types"
 import { PageHeader } from "@/components/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -94,47 +93,58 @@ export default function LabPage() {
 export function ProviderSelect({ value, onChange, exclude }: { value: string; onChange: (v: string) => void; exclude?: string | null }) {
   const { data } = useQuery({ queryKey: ["lab-providers"], queryFn: lab.providers })
   const rows = (data ?? []).filter(p => (p.id !== "fake" || import.meta.env.DEV) && p.id !== exclude)
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false) }
+    document.addEventListener("mousedown", onDoc); document.addEventListener("keydown", onKey)
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey) }
+  }, [open])
+  const sel = rows.find(p => p.id === value)
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
-      {rows.map(p => {
-        const sel = value === p.id
-        return (
-          <button type="button" key={p.id} disabled={!p.available} onClick={() => onChange(p.id)} title={p.model}
-            className={cn("relative rounded-lg border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring",
-              sel ? "border-primary bg-primary/10" : "border-border bg-card hover:border-primary/50", !p.available && "cursor-not-allowed opacity-45")}>
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold">{p.label}</div>
-                <div className="font-mono text-[10px] text-muted-foreground">{p.vendor}</div>
-              </div>
-              <div className="shrink-0 text-right">
-                <div className="font-mono text-sm font-semibold text-primary">{p.price_per_second > 0 ? `$${p.price_per_second.toFixed(2)}` : "free"}<span className="text-[10px] font-normal text-muted-foreground">/s</span></div>
-                <div className="font-mono text-[10px] text-muted-foreground">≤{p.max_seconds}s clips</div>
-              </div>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {p.first_last && <Chip>first+last frame</Chip>}
-              {p.audio && <Chip>audio</Chip>}
-              {p.supports_edit && <Chip accent>clip edit</Chip>}
-              {!p.available && p.needs && <Chip warn>needs {p.needs}</Chip>}
-            </div>
-            <p className="mt-1.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">{p.note}</p>
-            {sel && <span className="absolute right-2 top-2 size-2 rounded-full bg-primary" />}
-          </button>
-        )
-      })}
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen(o => !o)} aria-haspopup="listbox" aria-expanded={open}
+        className={cn("flex w-full items-center gap-3 rounded-lg border bg-card px-3 py-2.5 text-left transition-colors hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-ring", open ? "border-primary" : "border-border")}>
+        {sel ? <ProviderRow p={sel} /> : <span className="flex-1 text-sm text-muted-foreground">Choose a video model…</span>}
+        <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div role="listbox" className="absolute z-50 mt-1 max-h-[340px] w-full overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-xl">
+          {rows.map(p => (
+            <button type="button" key={p.id} role="option" aria-selected={p.id === value} disabled={!p.available} title={p.model}
+              onClick={() => { onChange(p.id); setOpen(false) }}
+              className={cn("flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors",
+                p.id === value ? "bg-primary/10" : "hover:bg-accent", !p.available && "cursor-not-allowed opacity-45")}>
+              <ProviderRow p={p} />
+              {p.id === value && <Check className="size-4 shrink-0 text-primary" />}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-function Chip({ children, accent, warn }: { children: React.ReactNode; accent?: boolean; warn?: boolean }) {
-  return <span className={cn("rounded border px-1.5 py-px font-mono text-[9px] uppercase tracking-wide",
-    accent ? "border-primary/50 text-primary" : warn ? "border-fail/40 text-fail" : "border-border text-muted-foreground")}>{children}</span>
+function ProviderRow({ p }: { p: LabProvider }) {
+  return (
+    <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+      <div className="min-w-0">
+        <div className="truncate text-sm font-semibold">{p.label}</div>
+        <div className="font-mono text-[10px] text-muted-foreground">{p.vendor}{!p.available && p.needs ? ` · needs ${p.needs}` : ""}</div>
+      </div>
+      <div className="shrink-0 text-right">
+        <div className="font-mono text-sm font-semibold text-primary">{p.price_per_second > 0 ? `$${p.price_per_second.toFixed(2)}` : "free"}<span className="text-[10px] font-normal text-muted-foreground">/s</span></div>
+        <div className="font-mono text-[10px] text-muted-foreground">≤{p.max_seconds}s clips</div>
+      </div>
+    </div>
+  )
 }
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-md border border-border bg-card px-2 py-1.5">
+    <div className="min-w-[84px] rounded-md border border-border bg-card px-2 py-1.5">
       <div className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className="font-heading text-sm font-semibold">{value}</div>
       {sub && <div className="truncate font-mono text-[9px] text-muted-foreground" title={sub}>{sub}</div>}
@@ -156,42 +166,48 @@ function NewVideoDialog({ open, onClose }: { open: boolean; onClose: () => void 
   })
   return (
     <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="font-heading">New AI video</DialogTitle>
-          <DialogDescription>Write what should happen, pick a length. You'll review the keyframes before animation.</DialogDescription>
+          <DialogDescription>Write what should happen, pick a model and a length. You'll review the keyframes before animation.</DialogDescription>
         </DialogHeader>
-        <form className="space-y-5" onSubmit={e => { e.preventDefault(); if (prompt.trim().length >= 5) create.mutate() }}>
+        <form className="space-y-4" onSubmit={e => { e.preventDefault(); if (prompt.trim().length >= 5) create.mutate() }}>
           <div>
             <Label htmlFor="lp" className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">1 · What video do you want?</Label>
-            <Textarea id="lp" rows={4} autoFocus value={prompt} onChange={e => setPrompt(e.target.value)}
+            <Textarea id="lp" rows={9} autoFocus value={prompt} onChange={e => setPrompt(e.target.value)} className="min-h-[200px] resize-none text-[15px] leading-relaxed"
               placeholder="A solo founder's morning in a sunlit cafe: a steaming coffee, a laptop opening, typing, then stepping out into a bright city street. Warm cinematic light, calm and motivating." />
           </div>
-          <div>
-            <Label htmlFor="ls" className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">Visual style (optional)</Label>
-            <Input id="ls" value={style} onChange={e => setStyle(e.target.value)} placeholder="cinematic realistic · anime · claymation · film noir…" />
-          </div>
-          <div>
-            <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">2 · Video model <span className="normal-case tracking-normal text-muted-foreground/70">(animates the keyframes; keyframes always come from OpenAI)</span></Label>
-            <ProviderSelect value={provider} onChange={setProvider} />
-          </div>
-          <div className="rounded-lg border border-border bg-surface-2 p-4">
-            <div className="flex items-baseline justify-between">
-              <Label htmlFor="ld" className="text-xs uppercase tracking-wider text-muted-foreground">3 · Length</Label>
-              <span className="font-heading text-xl font-bold">{duration}<span className="text-sm font-normal text-muted-foreground">s</span></span>
+          <div className="grid gap-4 sm:grid-cols-[1fr_1fr]">
+            <div>
+              <Label htmlFor="ls" className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">Visual style (optional)</Label>
+              <Input id="ls" value={style} onChange={e => setStyle(e.target.value)} placeholder="cinematic realistic · anime · claymation…" className="h-[58px]" />
             </div>
-            <input id="ld" type="range" min={3} max={25} step={1} value={duration} onChange={e => setDuration(Number(e.target.value))} className="scrub mt-2 w-full" />
-            <div className="mt-1 flex justify-between font-mono text-[10px] text-muted-foreground"><span>3s</span><span>25s</span></div>
-            {est && (
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                <Stat label="keyframes" value={String(est.keyframes)} sub={`${est.image_quality} · $${est.image_cost.toFixed(2)}`} />
-                <Stat label="clips" value={`${est.n_segments} × ${est.segment_seconds}s`} sub={est.video_seconds !== duration ? `renders ${est.video_seconds}s` : `$${est.price_per_second.toFixed(2)}/s`} />
-                <Stat label="video cost" value={`$${est.video_cost.toFixed(2)}`} sub={est.label} />
+            <div>
+              <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">2 · Video model</Label>
+              <ProviderSelect value={provider} onChange={setProvider} />
+            </div>
+          </div>
+          <div className="rounded-lg border border-border bg-surface-2 px-4 py-3">
+            <div className="grid items-center gap-4 sm:grid-cols-[1fr_auto]">
+              <div>
+                <div className="flex items-baseline justify-between">
+                  <Label htmlFor="ld" className="text-xs uppercase tracking-wider text-muted-foreground">3 · Length</Label>
+                  <span className="font-heading text-xl font-bold">{duration}<span className="text-sm font-normal text-muted-foreground">s</span></span>
+                </div>
+                <input id="ld" type="range" min={3} max={25} step={1} value={duration} onChange={e => setDuration(Number(e.target.value))} className="scrub mt-1 w-full" />
+                <div className="flex justify-between font-mono text-[10px] text-muted-foreground"><span>3s</span><span>25s</span></div>
               </div>
-            )}
+              {est && (
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <Stat label="keyframes" value={String(est.keyframes)} sub={`$${est.image_cost.toFixed(2)}`} />
+                  <Stat label="clips" value={`${est.n_segments} × ${est.segment_seconds}s`} sub={est.video_seconds !== duration ? `renders ${est.video_seconds}s` : `$${est.price_per_second.toFixed(2)}/s`} />
+                  <Stat label="video" value={`$${est.video_cost.toFixed(2)}`} sub={est.label} />
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex items-center justify-end gap-2">
-            <span className="mr-auto text-[11px] text-muted-foreground">{est ? `Estimate: ${est.note}` : ""}</span>
+            <span className="mr-auto text-[11px] text-muted-foreground">{est ? "Estimate uses list prices; retries and re-dos are extra." : ""}</span>
             <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
             <Button type="submit" size="lg" disabled={prompt.trim().length < 5 || create.isPending}>
               <FlaskConical className="size-4" /> {create.isPending ? "Starting…" : "Create video"}{est ? <span className="ml-1 rounded bg-primary-foreground/15 px-1.5 font-mono text-xs">≈ ${est.total.toFixed(2)}</span> : null}
