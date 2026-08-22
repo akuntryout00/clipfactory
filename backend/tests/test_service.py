@@ -151,3 +151,48 @@ def test_render_failure_marks_failed_without_rerunning_llm(svc, session, monkeyp
     assert p.status == ProjectStatus.FAILED.value and "ffmpeg exploded" in p.error
     assert calls["n"] == 0
     assert p.script_version == 1 and p.plan_version == 1
+
+
+def _with_duration(r, d):
+    try:
+        return r.model_copy(update={"duration": d})
+    except AttributeError:
+        import dataclasses
+
+        return dataclasses.replace(r, duration=d)
+
+
+def test_voice_limit_prefers_explicit_target_over_template_max():
+    from app.config.loaders import load_persona, load_template
+    from app.projects.service import VOICE_TOLERANCE, voice_limit
+
+    persona, tpl = load_persona("young_professional"), load_template("story_v1")  # story max 22
+    assert voice_limit(persona, tpl, 18) == (22, 22 + VOICE_TOLERANCE)
+    assert voice_limit(persona, tpl, 25) == (25, 25 + VOICE_TOLERANCE)
+
+
+def test_voice_slightly_over_target_is_kept_without_rewrite(svc, session, monkeypatch):
+    """User asked for 25 s with a 22 s template; a 25.4 s voice must pass (tolerance), no rewrite."""
+    orig = svc.voice.synthesize
+    monkeypatch.setattr(svc.voice, "synthesize", lambda **kw: _with_duration(orig(**kw), 25.4))
+    p = svc.create_project(topic="Things I stopped doing", template_id="story_v1", target_duration=25)
+    svc.run_script(p.id)
+    res = svc.run_voice(p.id)
+    p = session.get(VideoProject, p.id)
+    assert res.duration == 25.4 and p.script_version == 1 and p.voice_version == 1
+
+
+def test_voice_far_over_target_is_rewritten(svc, session, monkeypatch):
+    orig = svc.voice.synthesize
+    calls = {"n": 0}
+
+    def syn(**kw):
+        calls["n"] += 1
+        return _with_duration(orig(**kw), 29.0 if calls["n"] == 1 else 24.8)
+
+    monkeypatch.setattr(svc.voice, "synthesize", syn)
+    p = svc.create_project(topic="Things I stopped doing", template_id="story_v1", target_duration=25)
+    svc.run_script(p.id)
+    res = svc.run_voice(p.id)
+    p = session.get(VideoProject, p.id)
+    assert res.duration == 24.8 and p.script_version == 2 and p.voice_version == 2

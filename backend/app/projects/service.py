@@ -43,6 +43,18 @@ log = logging.getLogger(__name__)
 
 MAX_REWRITES = 2
 MIN_TARGET, MAX_TARGET = 15.0, 25.0
+VOICE_TOLERANCE = 1.0  # seconds the voice may run over the limit — TTS pacing is not exact and 1 s does not hurt the cut
+
+
+def voice_limit(persona, template, target_duration: float) -> tuple[float, float]:
+    """(aim, hard) voice length limits in seconds.
+
+    The template/persona max is the structural default, but an explicit project target above it wins —
+    the user asked for that length. `aim` is what a rewrite shortens towards, `hard` adds the tolerance.
+    """
+    aim = max(min(persona.max_duration, template.duration.max, MAX_TARGET), float(target_duration or 0))
+    return aim, aim + VOICE_TOLERANCE
+
 
 ProgressFn = Callable[[str, str], None]
 
@@ -192,7 +204,7 @@ class ProjectService:
         if p.script_version == 0:
             raise RuntimeError("run_script first")
         self._set_status(p, ProjectStatus.GENERATING_VOICE, "Generating voice...")
-        max_dur = min(persona.max_duration, template.duration.max, MAX_TARGET)
+        max_dur, hard_max = voice_limit(persona, template, p.target_duration)
         script = self.load_script(p.id, p.script_version)
         rewrites = 0
         try:
@@ -216,10 +228,17 @@ class ProjectService:
                 self.session.add(ProjectEvent(project_id=p.id, stage="VOICE", message=f"voice v{version}: {res.duration:.2f}s"))
                 self.session.commit()
                 self.progress("VOICE", f"Voice generated: {res.duration:.1f} sec")
-                if res.duration <= max_dur:
+                if res.duration <= hard_max:
+                    if res.duration > max_dur:
+                        self.progress(
+                            "VOICE",
+                            f"Voice {res.duration:.1f}s is within the {VOICE_TOLERANCE:.0f}s tolerance over {max_dur:.0f}s — keeping it",
+                        )
                     return res
                 if rewrites >= MAX_REWRITES:
-                    raise RuntimeError(f"voice is {res.duration:.1f}s > max {max_dur:.0f}s after {MAX_REWRITES} rewrites")
+                    raise RuntimeError(
+                        f"voice is {res.duration:.1f}s > max {max_dur:.0f}s (+{VOICE_TOLERANCE:.0f}s tolerance) after {MAX_REWRITES} rewrites"
+                    )
                 rewrites += 1
                 ratio = max_dur / res.duration
                 target_words = max(12, int(len(words_of(script.full_text)) * ratio * 0.92))

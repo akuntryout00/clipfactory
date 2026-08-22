@@ -74,7 +74,8 @@ export default function GeneratePage() {
           <div>
             <Label htmlFor="dur" className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">Target length · <span className="font-mono text-foreground">{duration}s</span></Label>
             <input id="dur" type="range" min={15} max={25} step={1} value={duration} onChange={e => setDuration(Number(e.target.value))} className="scrub w-full" />
-            <div className="flex justify-between font-mono text-[11px] text-muted-foreground"><span>15s</span><span>{tpl ? `template max ${tpl.duration.max}s` : ""}</span><span>25s</span></div>
+            <div className="flex justify-between font-mono text-[11px] text-muted-foreground"><span>15s</span><span>{tpl ? `template ${tpl.duration.min}–${tpl.duration.max}s` : ""}</span><span>25s</span></div>
+            {tpl && duration > tpl.duration.max && <p className="mt-1 text-xs text-muted-foreground">Above the template's usual {tpl.duration.max}s — allowed; the voice may run up to {duration + 1}s.</p>}
           </div>
           <Button type="submit" size="lg" disabled={topic.trim().length < 3 || !personaId || create.isPending}>
             <Sparkles className="size-4" /> {create.isPending ? "Starting…" : "Generate video"}
