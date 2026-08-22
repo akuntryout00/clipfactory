@@ -1,7 +1,12 @@
-import { useQuery } from "@tanstack/react-query"
-import { Check, X } from "lucide-react"
+import { useEffect, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Check, Save, X } from "lucide-react"
+import { toast } from "sonner"
 import { api } from "@/lib/api"
+import type { CaptionOverrides } from "@/lib/types"
 import { PageHeader } from "@/components/PageHeader"
+import { CaptionSettingsForm } from "@/components/CaptionSettingsForm"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 export default function SystemPage() {
@@ -29,9 +34,39 @@ export default function SystemPage() {
             <div>planner {s.lab.planner}</div>
             <div>GOOGLE_API_KEY {ok(s.lab.google_key_set)}</div></CardContent></Card>}
           <Card><CardHeader><CardTitle className="text-sm">Paths</CardTitle></CardHeader><CardContent className="space-y-1 break-all font-mono text-xs">
-            <div>assets {s.assets_dir}</div><div>storage {s.storage_dir}</div><div>db {s.database_url}</div><div>persona {s.default_persona}</div></CardContent></Card>
+            <div>assets {s.assets_dir}</div><div>storage {s.storage_dir}</div><div>fonts {s.fonts_dir}</div><div>db {s.database_url}</div><div>persona {s.default_persona}</div></CardContent></Card>
         </>)}
       </div>
+      <CaptionSettingsCard />
+    </div>
+  )
+}
+
+/** Global caption font / position settings — the default for every new render; projects can override them. */
+function CaptionSettingsCard() {
+  const qc = useQueryClient()
+  const { data } = useQuery({ queryKey: ["caption-settings"], queryFn: api.captionSettings })
+  const [ov, setOv] = useState<CaptionOverrides>({})
+  const [dirty, setDirty] = useState(false)
+  useEffect(() => { if (data && !dirty) setOv(data.overrides) }, [data, dirty])
+  const save = useMutation({
+    mutationFn: () => api.saveCaptionSettings(ov),
+    onSuccess: () => { toast.success("Caption settings saved — applied on the next render of every project"); setDirty(false); qc.invalidateQueries({ queryKey: ["caption-settings"] }); qc.invalidateQueries({ queryKey: ["project"] }) },
+    onError: e => toast.error(e.message),
+  })
+  return (
+    <div className="px-8 pb-10">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between text-sm">
+            <span>Captions — font &amp; position <span className="ml-2 font-mono text-[11px] font-normal text-muted-foreground">applies to all projects · a project can override</span></span>
+            <Button size="sm" onClick={() => save.mutate()} disabled={!dirty || save.isPending}><Save className="size-3.5" /> {save.isPending ? "Saving…" : "Save"}</Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {data ? <CaptionSettingsForm base={data.defaults} value={ov} onChange={v => { setOv(v); setDirty(true) }} scopeLabel="template default" /> : <p className="text-sm text-muted-foreground">Loading…</p>}
+        </CardContent>
+      </Card>
     </div>
   )
 }

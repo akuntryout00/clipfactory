@@ -1,4 +1,4 @@
-import type { Artifacts, Asset, Candidate, ClipAnalysis, LabEstimate, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
+import type { Artifacts, Asset, Candidate, CaptionOverrides, CaptionStyle, ClipAnalysis, FontInfo, LabEstimate, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
 
 export const API = import.meta.env.VITE_API_BASE || "/api"
 
@@ -34,6 +34,17 @@ export const api = {
   action: (id: string, action: "generate" | "regenerate-script" | "change-assets" | "render" | "retry") =>
     req<{ project_id: string; action: string }>(`/projects/${id}/${action}`, { method: "POST" }),
   approve: (id: string) => req<Project>(`/projects/${id}/approve`, { method: "POST" }),
+  setProjectCaptions: (id: string, overrides: CaptionOverrides | null) =>
+    req<Project>(`/projects/${id}/captions`, { method: "PUT", body: JSON.stringify({ overrides }) }),
+  captionSettings: () => req<{ overrides: CaptionOverrides; defaults: CaptionStyle }>("/settings/captions"),
+  saveCaptionSettings: (overrides: CaptionOverrides) => req<{ overrides: CaptionOverrides }>("/settings/captions", { method: "PUT", body: JSON.stringify({ overrides }) }),
+  fonts: () => req<{ fonts_dir: string; fonts: FontInfo[] }>("/fonts"),
+  uploadFont: async (file: File) => {
+    const fd = new FormData(); fd.append("file", file)
+    const res = await fetch(`${API}/fonts/upload`, { method: "POST", body: fd })
+    if (!res.ok) { let d = res.statusText; try { d = (await res.json()).detail ?? d } catch { /* ignore */ } throw new Error(String(d)) }
+    return res.json() as Promise<FontInfo>
+  },
   plan: (id: string) => req<Plan>(`/projects/${id}/plan`),
   artifacts: (id: string) => req<Artifacts>(`/projects/${id}/artifacts`),
   suggestions: (id: string, order: number) => req<Candidate[]>(`/projects/${id}/scenes/${order}/suggestions`),
@@ -91,6 +102,7 @@ export const media = {
   renderVideo: (id: string, v: number) => `${API}/projects/${id}/renders/${v}/video`,
   assetThumb: (id: string) => `${API}/assets/${id}/thumbnail`,
   assetFile: (id: string) => `${API}/assets/${id}/file`,
+  fontFile: (name: string) => `${API}/fonts/file/${encodeURIComponent(name)}`,
 }
 
 export const fmtTime = (s: number) => {

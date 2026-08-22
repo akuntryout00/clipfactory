@@ -30,6 +30,7 @@ services:
       - ./assets:/app/assets
       - ./storage:/app/storage
       - ./configs:/app/configs
+      - ./fonts:/app/fonts
       - ./backend/app:/app/backend/app
       - ./backend/tests:/app/backend/tests
     ports:

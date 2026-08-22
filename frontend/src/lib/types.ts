@@ -28,7 +28,20 @@ export interface Project {
   script: string | null; script_version: number; voice_version: number; plan_version: number; render_version: number
   current_render_id: string | null; created_at: string; updated_at: string; approved_at: string | null
   scenes: Scene[]; renders: RenderInfo[]; events: EventInfo[]; video_url: string | null
+  caption_overrides: CaptionOverrides | null; caption_style: CaptionStyle | null
 }
+/** font / size / position overrides; null = keep the template's caption style */
+export interface CaptionOverrides {
+  font_name?: string | null; font_size?: number | null; bold?: boolean | null; vertical_anchor_ratio?: number | null
+  overlay_font_name?: string | null; overlay_font_size?: number | null; overlay_vertical_anchor_ratio?: number | null
+}
+export interface CaptionStyle {
+  id: string; font_name: string; font_size: number; bold: boolean; primary_color: string; emphasis_color: string; outline_color: string
+  outline: number; shadow: number; max_chars_per_line: number; vertical_anchor_ratio: number; animation: string
+  safe_zone: { top: number; bottom: number; left: number; right: number }
+  overlay: { font_name: string; font_size: number; bold: boolean; primary_color: string; outline_color: string; outline: number; vertical_anchor_ratio: number; max_chars_per_line: number }
+}
+export interface FontInfo { family: string; style: string | null; file: string | null; source: "fonts_dir" | "system" }
 export interface Asset {
   id: string; file: string; description: string | null; tags: string[]; action: string | null; location: string | null
   shot: string | null; mood: string | null; duration: number; width: number | null; height: number | null; fps: number | null
@@ -70,7 +83,7 @@ export interface Artifacts {
 }
 export interface SystemInfo {
   llm_provider: string; openai_model: string; openai_key_set: boolean; voice_provider: string; elevenlabs_key_set: boolean
-  elevenlabs_voice_id_set: boolean; default_persona: string; database_url: string; assets_dir: string; storage_dir: string
+  elevenlabs_voice_id_set: boolean; default_persona: string; database_url: string; assets_dir: string; storage_dir: string; fonts_dir?: string
   ffmpeg: string; render_ok: boolean; render_missing: string[]; assets_count: number; assets_approved: number
   projects_count: number; music_tracks: string[]
   lab?: { planner: string; image_provider: string; image_model: string; image_size: string; video_provider: string; video_model: string; google_key_set: boolean; fal_key_set?: boolean; fal_default_model?: string }

@@ -76,3 +76,7 @@ SQLAlchemy 2.0, Postgres in compose, SQLite in tests. `db.init_db()` creates tab
 
 ## Testing
 `backend/tests` — unit tests with fake providers + ffmpeg-generated synthetic clips; renderer/QC and end-to-end tests need ffmpeg with **libass** (run `make test` in Docker if your local ffmpeg lacks it). Frontend is type-checked (`tsc -b`) and built.
+
+## Caption settings
+
+`captions/settings.py`: `CaptionOverrides` (font, size, bold, vertical anchor for captions and overlays) stored globally in the `app_settings` table (key `captions`, API `GET/PUT /settings/captions`) and per project in `video_projects.caption_overrides` (`PUT /projects/{id}/captions`). `ProjectService.caption_style_for()` resolves template caption style → global → project before caption generation and rendering; `render_video(..., fonts_dir=)` passes `fonts/` to libass as `fontsdir`. `GET /fonts` lists `fonts/*.ttf|otf` (family read with `fc-scan`) plus fontconfig system families; `POST /fonts/upload` adds a file.

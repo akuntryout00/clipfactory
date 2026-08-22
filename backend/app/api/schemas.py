@@ -67,6 +67,8 @@ class ProjectOut(BaseModel):
     renders: list[RenderOut] = []
     events: list[EventOut] = []
     video_url: str | None = None
+    caption_overrides: dict | None = None
+    caption_style: dict | None = None  # effective style (template → global → project), for the UI preview
 
 
 class AssetPatch(BaseModel):

@@ -6,7 +6,7 @@ import json
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -203,6 +203,64 @@ def persona_delete(persona_id: str, db: Session = Depends(get_db)):
     return Response(status_code=204)
 
 
+# ---------- caption settings & fonts ----------
+def fonts_dir(request: Request) -> Path:
+    return Path(request.app.state.service_kwargs.get("fonts_dir") or get_settings().fonts_dir)
+
+
+@router.get("/settings/captions")
+def caption_settings_get(request: Request, db: Session = Depends(get_db)):
+    from app.captions.settings import get_caption_settings
+
+    base = load_caption_style("dynamic_center", cfg_dir(request))
+    return {"overrides": get_caption_settings(db).model_dump(), "defaults": base.model_dump()}
+
+
+@router.put("/settings/captions")
+def caption_settings_put(body: dict, request: Request, db: Session = Depends(get_db)):
+    from pydantic import ValidationError
+
+    from app.captions.settings import CaptionOverrides, set_caption_settings
+
+    try:
+        ov = CaptionOverrides.model_validate(body.get("overrides", body) or {})
+    except ValidationError as exc:
+        raise HTTPException(422, exc.errors()[0].get("msg", "invalid caption settings"))
+    set_caption_settings(db, ov)
+    return {"overrides": ov.model_dump()}
+
+
+@router.get("/fonts")
+def fonts_list(request: Request):
+    from app.captions.settings import list_fonts
+
+    return {"fonts_dir": str(fonts_dir(request)), "fonts": list_fonts(fonts_dir(request))}
+
+
+@router.get("/fonts/file/{name}")
+def font_file(name: str, request: Request):
+    from fastapi.responses import FileResponse
+
+    path = (fonts_dir(request) / Path(name).name).resolve()
+    if not path.is_file() or path.suffix.lower() not in (".ttf", ".otf") or fonts_dir(request).resolve() not in path.parents:
+        raise HTTPException(404, "font not found")
+    media = "font/otf" if path.suffix.lower() == ".otf" else "font/ttf"
+    return FileResponse(path, media_type=media, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@router.post("/fonts/upload", status_code=201)
+async def font_upload(request: Request, file: UploadFile = File(...)):
+    from app.captions.settings import save_font_file
+
+    data = await file.read()
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(413, "font file too large (max 20 MB)")
+    try:
+        return save_font_file(fonts_dir(request), file.filename or "font.ttf", data)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
 @router.get("/system")
 def system(request: Request, db: Session = Depends(get_db)):
     from sqlalchemy import func
@@ -232,6 +290,7 @@ def system(request: Request, db: Session = Depends(get_db)):
         "database_url": st.database_url.split("@")[-1] if "@" in st.database_url else st.database_url,
         "assets_dir": str(assets_dir(request)),
         "storage_dir": str(storage_dir(request)),
+        "fonts_dir": str(fonts_dir(request)),
         "ffmpeg": ffmpeg_ver,
         "render_ok": not missing,
         "render_missing": missing,

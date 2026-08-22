@@ -35,7 +35,7 @@ from app.models import (
 from app.personas.repo import persona_or_config
 from app.renderer.ffmpeg import RenderOptions, render_video
 from app.renderer.qc import run_qc
-from app.schemas.configs import PersonaConfig, TemplateConfig
+from app.schemas.configs import CaptionStyleConfig, PersonaConfig, TemplateConfig
 from app.schemas.pipeline import NormalizedScene, ScriptOutput, VideoJSON, VoiceResult, WordTiming
 from app.voice.base import VoiceProvider, get_voice_provider
 
@@ -71,10 +71,12 @@ class ProjectService:
         render_preset: str | None = None,
         render_crf: int | None = None,
         configs_dir: Path | None = None,
+        fonts_dir: Path | None = None,
     ):
         s = get_settings()
         self.session = session
         self.configs_dir = Path(configs_dir) if configs_dir else None
+        self.fonts_dir = Path(fonts_dir or s.fonts_dir)
         self._llm = llm
         self._voice = voice
         self.storage_dir = Path(storage_dir or s.storage_dir)
@@ -145,6 +147,13 @@ class ProjectService:
         return persona_or_config(self.session, p.persona_id, self.configs_dir), load_template(p.template_id, self.configs_dir)
 
     # ---------- project CRUD ----------
+
+    def caption_style_for(self, p: VideoProject, template: TemplateConfig) -> CaptionStyleConfig:
+        """Template caption style → global caption settings (System) → this project's overrides."""
+        from app.captions.settings import resolve_caption_style
+
+        base = load_caption_style(template.caption_style, self.configs_dir)
+        return resolve_caption_style(self.session, base, p.caption_overrides)
 
     def create_project(
         self, topic: str, template_id: str, persona_id: str | None = None, target_duration: float | None = None
@@ -295,7 +304,7 @@ class ProjectService:
                 scenes = normalize_plan(raw, words, template, vg.duration)
             self.progress("PLANNING", f"{len(scenes)} scenes planned.")
             self._set_status(p, ProjectStatus.SELECTING_ASSETS, "Selecting B-roll...")
-            style = load_caption_style(template.caption_style, self.configs_dir)
+            style = self.caption_style_for(p, template)
             new_seed = seed if seed is not None else random.randint(1, 2**31 - 1)
             music = self._pick_music(template, persona)
             video = assign_assets(
@@ -364,7 +373,7 @@ class ProjectService:
         out = self.renders_dir(p.id) / f"render_v{version}.mp4"
         work = self.storage_dir / "temp" / p.id / f"render_v{version}"
         try:
-            style = load_caption_style(template.caption_style, self.configs_dir)
+            style = self.caption_style_for(p, template)
             music_path = (self.storage_dir / "music" / video.music) if video.music else None
             render_video(
                 video,
@@ -375,6 +384,7 @@ class ProjectService:
                 work_dir=work,
                 music_path=music_path,
                 options=self.render_options,
+                fonts_dir=self.fonts_dir if self.fonts_dir.is_dir() else None,
             )
             qc = run_qc(out, expected_duration=video.total_duration)
             r.qc = qc

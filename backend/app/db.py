@@ -54,6 +54,7 @@ def _ensure_columns(engine) -> None:
         "lab_segments": {"provider_ref": "VARCHAR(256)", "last_edit": "TEXT", "version": "INTEGER DEFAULT 0"},
         "lab_videos": {"video_provider": "VARCHAR(64)"},
         "assets": {"persona_id": "VARCHAR(64)"},
+        "video_projects": {"caption_overrides": "JSON"},
     }
     with engine.begin() as conn:
         for table, cols in wanted.items():

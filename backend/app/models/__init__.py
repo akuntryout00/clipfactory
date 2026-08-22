@@ -41,6 +41,15 @@ class Persona(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class AppSetting(Base):
+    """Key/value store for UI-editable global settings (e.g. key 'captions')."""
+
+    __tablename__ = "app_settings"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class Template(Base):
     __tablename__ = "templates"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -113,6 +122,8 @@ class VideoProject(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # per-project caption overrides (font, size, position…) on top of the global caption settings; None = use defaults
+    caption_overrides: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     scenes: Mapped[list[VideoScene]] = relationship(back_populates="project", cascade="all, delete-orphan")
     voices: Mapped[list[VoiceGeneration]] = relationship(back_populates="project", cascade="all, delete-orphan")

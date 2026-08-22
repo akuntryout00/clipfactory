@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -44,6 +45,15 @@ def _project_out(p: VideoProject, db: Session) -> ProjectOut:
     out.events = [e for e in sorted(p.events, key=lambda e: e.created_at)][-50:]
     if p.current_render_id and p.status in (ProjectStatus.READY.value, ProjectStatus.APPROVED.value):
         out.video_url = f"/projects/{p.id}/video"
+    try:
+        from app.captions.settings import resolve_caption_style
+        from app.config.loaders import load_caption_style, load_template
+
+        cfg_dir = getattr(getattr(db, "info", {}), "get", lambda *_: None)("configs_dir")
+        tpl = load_template(p.template_id, cfg_dir)
+        out.caption_style = resolve_caption_style(db, load_caption_style(tpl.caption_style, cfg_dir), p.caption_overrides).model_dump()
+    except Exception:  # noqa: BLE001 — a missing template must not break the project view
+        out.caption_style = None
     return out
 
 
@@ -121,6 +131,31 @@ def approve(project_id: str, request: Request, db: Session = Depends(get_db)):
         p = svc(db, request).approve(project_id)
     except RuntimeError as exc:
         raise HTTPException(409, str(exc))
+    return _project_out(p, db)
+
+
+class CaptionOverridesIn(BaseModel):
+    overrides: dict | None = None  # None / {} clears the per-project overrides
+
+
+@router.put("/projects/{project_id}/captions", response_model=ProjectOut)
+def project_captions(project_id: str, body: CaptionOverridesIn, db: Session = Depends(get_db)):
+    """Set per-project caption overrides (font, size, position). Takes effect on the next render ('Render again')."""
+    from app.captions.settings import CaptionOverrides
+
+    p = db.get(VideoProject, project_id)
+    if p is None:
+        raise HTTPException(404, "project not found")
+    if body.overrides:
+        try:
+            ov = CaptionOverrides.model_validate(body.overrides)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(422, f"invalid caption overrides: {exc}")
+        p.caption_overrides = None if ov.is_empty() else ov.model_dump()
+    else:
+        p.caption_overrides = None
+    db.commit()
+    db.refresh(p)
     return _project_out(p, db)
 
 

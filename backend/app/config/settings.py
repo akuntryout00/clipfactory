@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     storage_dir: Path = REPO_DIR / "storage"
     assets_dir: Path = REPO_DIR / "assets"
     configs_dir: Path = REPO_DIR / "configs"
+    fonts_dir: Path = REPO_DIR / "fonts"  # caption fonts (.ttf/.otf) offered in the UI and passed to libass
 
     # rendering
     ffmpeg_bin: str = "ffmpeg"

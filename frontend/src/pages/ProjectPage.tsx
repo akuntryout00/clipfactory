@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Check, Download, RefreshCw, Repeat, Shuffle, Wand2 } from "lucide-react"
+import { ArrowLeft, Check, Download, RefreshCw, Repeat, Shuffle, Type, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { api, fmtDate, fmtTime, media } from "@/lib/api"
-import type { Candidate, Project } from "@/lib/types"
+import type { Candidate, CaptionOverrides, Project } from "@/lib/types"
+import { CaptionSettingsForm, applyCaptionOverrides } from "@/components/CaptionSettingsForm"
 import { PageHeader } from "@/components/PageHeader"
 import { StatusBadge } from "@/components/StatusBadge"
 import { StageTimeline } from "@/components/StageTimeline"
@@ -32,6 +33,7 @@ export default function ProjectPage() {
   const [t, setT] = useState(0)
   const [selScene, setSelScene] = useState<number | null>(null)
   const [changeScene, setChangeScene] = useState<number | null>(null)
+  const [captionsOpen, setCaptionsOpen] = useState(false)
   useEffect(() => { setSelScene(null) }, [p?.plan_version])
 
   const refresh = () => { qc.invalidateQueries({ queryKey: ["project", id] }); qc.invalidateQueries({ queryKey: ["projects"] }) }
@@ -58,6 +60,7 @@ export default function ProjectPage() {
           <Button variant="outline" size="sm" disabled={running || p.script_version === 0} onClick={() => act.mutate("regenerate-script")} title="New hook + script → voice → scenes → render"><Wand2 className="size-4" /> Regenerate script</Button>
           <Button variant="outline" size="sm" disabled={running || p.plan_version === 0} onClick={() => act.mutate("change-assets")} title="Keep script & voice, pick different B-roll"><Shuffle className="size-4" /> Change assets</Button>
           <Button variant="outline" size="sm" disabled={running || p.plan_version === 0} onClick={() => act.mutate("render")} title="Same content, new visual variation"><Repeat className="size-4" /> Render again</Button>
+          <Button variant="outline" size="sm" disabled={running} onClick={() => setCaptionsOpen(true)} title="Font & position of captions for this project"><Type className="size-4" /> Captions{p.caption_overrides ? " *" : ""}</Button>
           {p.status === "FAILED" && <Button variant="outline" size="sm" onClick={() => act.mutate("retry")}><RefreshCw className="size-4" /> Retry</Button>}
           {p.status === "DRAFT" && <Button size="sm" onClick={() => act.mutate("generate")}>Generate</Button>}
           <Button size="sm" disabled={p.status !== "READY"} onClick={() => approve.mutate()}><Check className="size-4" /> {p.status === "APPROVED" ? "Approved" : "Approve"}</Button>
@@ -201,7 +204,44 @@ export default function ProjectPage() {
 
       <ChangeSceneDialog project={p} order={changeScene} onClose={() => setChangeScene(null)}
         onPick={(asset_id) => changeScene != null && setAsset.mutate({ order: changeScene, asset_id })} busy={setAsset.isPending} />
+      <ProjectCaptionsDialog project={p} open={captionsOpen} onClose={() => setCaptionsOpen(false)}
+        onSaved={(render) => { refresh(); if (render) act.mutate("render") }} />
     </div>
+  )
+}
+
+/** Per-project caption overrides on top of the system settings. Saved values apply on the next render. */
+function ProjectCaptionsDialog({ project, open, onClose, onSaved }: { project: Project; open: boolean; onClose: () => void; onSaved: (render: boolean) => void }) {
+  const { data: sys } = useQuery({ queryKey: ["caption-settings"], queryFn: api.captionSettings, enabled: open })
+  const [ov, setOv] = useState<CaptionOverrides>(project.caption_overrides ?? {})
+  useEffect(() => { if (open) setOv(project.caption_overrides ?? {}) }, [open, project.caption_overrides])
+  // base for this project = template style (+ global settings); caption_style from the API already includes the project overrides,
+  // so rebuild the base from the system defaults + global overrides when available
+  const base = sys ? applyCaptionOverrides({ ...sys.defaults, ...(project.caption_style ? { safe_zone: project.caption_style.safe_zone } : {}) }, sys.overrides) : project.caption_style
+  const save = useMutation({
+    mutationFn: (render: boolean) => api.setProjectCaptions(project.id, Object.values(ov).some(v => v != null) ? ov : null).then(() => render),
+    onSuccess: render => { toast.success(render ? "Caption settings saved — rendering again" : "Caption settings saved — use Render again to apply"); onSaved(render); onClose() },
+    onError: e => toast.error(e.message),
+  })
+  const hasOverrides = Object.values(ov).some(v => v != null)
+  return (
+    <Dialog open={open} onOpenChange={o => { if (!o) onClose() }}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle className="font-heading">Captions · this project</DialogTitle>
+          <DialogDescription>Font and position overrides for <span className="font-mono">{project.id}</span> only. Empty fields use the system settings (System → Captions). Changes apply when the project is rendered again.</DialogDescription>
+        </DialogHeader>
+        {base ? <CaptionSettingsForm base={base} value={ov} onChange={setOv} scopeLabel="system setting" /> : <p className="text-sm text-muted-foreground">Loading…</p>}
+        <div className="flex items-center justify-between border-t border-border pt-4">
+          <Button type="button" variant="ghost" disabled={!hasOverrides} onClick={() => setOv({})}>Use system settings</Button>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="outline" disabled={save.isPending} onClick={() => save.mutate(false)}>Save</Button>
+            <Button type="button" disabled={save.isPending || project.plan_version === 0} onClick={() => save.mutate(true)}><Repeat className="size-4" /> Save &amp; render again</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

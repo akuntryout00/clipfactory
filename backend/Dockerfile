@@ -21,6 +21,7 @@ RUN pip install -e ".[dev]"
 # runtime dirs (mounted via compose in practice)
 RUN mkdir -p /app/storage /app/assets /app/configs
 COPY configs /app/configs
+COPY fonts /app/fonts
 
 ENV STORAGE_DIR=/app/storage \
     ASSETS_DIR=/app/assets \
