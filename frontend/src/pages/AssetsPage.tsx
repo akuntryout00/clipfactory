@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { RangeTrimmer } from "@/components/RangeTrimmer"
+import { useConfirm } from "@/components/ConfirmDialog"
 
 export default function AssetsPage() {
   const qc = useQueryClient()
@@ -197,6 +198,7 @@ function UploadDialog({ open, onClose, categories, personas, defaultPersona }: {
 
 function AssetDialog({ asset, onClose }: { asset: Asset | null; onClose: () => void }) {
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const [form, setForm] = useState<Partial<Asset>>({})
   const a = asset ? { ...asset, ...form } : null
   const save = useMutation({
@@ -240,7 +242,7 @@ function AssetDialog({ asset, onClose }: { asset: Asset | null; onClose: () => v
               <div><Label className="text-xs text-muted-foreground">Usable end (s)</Label><Input type="number" step="0.05" min={0} max={a.duration} value={a.usable_end} onChange={e => set("usable_end", Number(e.target.value))} /></div>
               <div className="col-span-2 flex items-center gap-2 pt-2">
                 <Button type="button" variant="ghost" className="text-fail hover:text-fail" disabled={del.isPending}
-                  onClick={() => { if (confirm(`Delete ${a.id} (${a.file}) from the library and disk? Existing renders are not affected.`)) del.mutate() }}>
+                  onClick={async () => { if (await confirm({ title: "Delete this clip?", subject: `${a.id} · ${a.file}`, description: "Removed from the library and from disk. Videos already rendered with it are not affected.", confirmLabel: "Delete clip" })) del.mutate() }}>
                   <Trash2 className="size-4" /> Delete clip
                 </Button>
                 <span className="flex-1" />

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
+import { useConfirm } from "@/components/ConfirmDialog"
 
 export const EMPTY_TEMPLATE: Template = {
   id: "", name: "", description: "", duration: { min: 15, target: 18, max: 22 },
@@ -26,6 +27,7 @@ const MUSIC = ["", "upbeat", "productivity_soft", "minimal", "chill"]
 
 export function TemplateEditor({ template, onClose }: { template: Template | null | "new"; onClose: () => void }) {
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const isNew = template === "new"
   const [t, setT] = useState<Template>(EMPTY_TEMPLATE)
   useEffect(() => { setT(template && template !== "new" ? structuredClone(template) : EMPTY_TEMPLATE) }, [template])
@@ -145,7 +147,7 @@ export function TemplateEditor({ template, onClose }: { template: Template | nul
           </div>
 
           <div className="flex items-center gap-2 pt-1">
-            {!isNew && <Button type="button" variant="ghost" className="text-fail hover:text-fail" onClick={() => { if (confirm(`Delete template ${t.id}? Existing projects keep their id but new ones can't use it.`)) del.mutate() }}><Trash2 className="size-4" /> Delete</Button>}
+            {!isNew && <Button type="button" variant="ghost" className="text-fail hover:text-fail" onClick={async () => { if (await confirm({ title: "Delete this template?", subject: `${t.name} · ${t.id}`, description: "Existing projects keep the id, but new videos can no longer use it.", confirmLabel: "Delete template" })) del.mutate() }}><Trash2 className="size-4" /> Delete</Button>}
             <span className="flex-1" />
             {!valid && <span className="text-[11px] text-muted-foreground">{!idOk ? "id: lowercase letters, digits, _ or -" : !totalOk ? "weights must sum to 100%" : !durOk ? "min ≤ target ≤ max" : !sectionsOk ? "every section needs a type and weight" : "name required"}</span>}
             <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>

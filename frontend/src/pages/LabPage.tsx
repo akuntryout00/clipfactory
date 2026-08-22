@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
+import { useConfirm } from "@/components/ConfirmDialog"
 
 const RUNNING = new Set(["PLANNING", "GENERATING_IMAGES", "ANIMATING"])
 const STATUS_STYLE: Record<string, string> = {
@@ -27,9 +28,10 @@ const title = (s: string) => (s.length > 50 ? s.slice(0, 50).trimEnd() + "…" :
 export default function LabPage() {
   const nav = useNavigate()
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const [open, setOpen] = useState(false)
   const { data } = useQuery({ queryKey: ["lab"], queryFn: lab.list, refetchInterval: q => (q.state.data?.some(v => RUNNING.has(v.status)) ? 4000 : 20000) })
-  const del = useMutation({ mutationFn: lab.delete, onSuccess: () => { toast.success("Deleted"); qc.invalidateQueries({ queryKey: ["lab"] }) }, onError: e => toast.error(e.message) })
+  const del = useMutation({ mutationFn: lab.delete, onSuccess: () => { toast.success("Lab video deleted"); qc.invalidateQueries({ queryKey: ["lab"] }) }, onError: e => toast.error(e.message) })
   const videos = data ?? []
 
   return (
@@ -77,7 +79,7 @@ export default function LabPage() {
                   <div className="mt-1.5 flex items-center justify-between font-mono text-[11px] text-muted-foreground">
                     <span className="truncate"><span className="text-foreground/80">{v.provider_label ?? v.video_model}</span> · {v.final_duration ? `${v.final_duration.toFixed(1)}s` : `${v.target_duration}s`} · {v.n_segments}×{v.segment_seconds}s · {fmtDate(v.created_at)}</span>
                     <span role="button" aria-label="Delete" className="rounded p-1 hover:bg-accent hover:text-fail"
-                      onClick={e => { e.stopPropagation(); if (confirm(`Delete "${title(v.prompt)}"?`)) del.mutate(v.id) }}><Trash2 className="size-3.5" /></span>
+                      onClick={async e => { e.stopPropagation(); if (await confirm({ title: "Delete this Lab video?", subject: title(v.prompt), description: "Keyframes, segments and the final clip are removed.", confirmLabel: "Delete video" })) del.mutate(v.id) }}><Trash2 className="size-3.5" /></span>
                   </div>
                 </div>
               </button>

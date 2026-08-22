@@ -10,12 +10,14 @@ import { PageHeader } from "@/components/PageHeader"
 import { StatusBadge } from "@/components/StatusBadge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useConfirm } from "@/components/ConfirmDialog"
 
 const RUNNING = new Set(["GENERATING_SCRIPT", "GENERATING_VOICE", "PLANNING", "SELECTING_ASSETS", "GENERATING_CAPTIONS", "RENDERING"])
 
 export default function ProjectsPage() {
   const nav = useNavigate()
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const [status, setStatus] = useState("ALL")
   const [tpl, setTpl] = useState("ALL")
   const { activeId, active } = usePersona()
@@ -87,7 +89,7 @@ export default function ProjectsPage() {
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(p.created_at)}</TableCell>
                 <TableCell onClick={e => e.stopPropagation()}>
                   <Button variant="ghost" size="icon-sm" aria-label="Delete project" disabled={RUNNING.has(p.status)}
-                    onClick={() => { if (confirm(`Delete project ${p.id}? This removes its renders too.`)) del.mutate(p.id) }}>
+                    onClick={async () => { if (await confirm({ title: "Delete this project?", subject: `${p.id} · ${p.topic}`, description: "Script, voice, plan and every render of this project are removed from storage.", confirmLabel: "Delete project" })) del.mutate(p.id) }}>
                     <Trash2 className="size-4 text-muted-foreground" />
                   </Button>
                 </TableCell>

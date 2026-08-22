@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
+import { useConfirm } from "@/components/ConfirmDialog"
 
 export const EMPTY_PERSONA: Persona = {
   id: "", name: "", language: "en-US", audience: "", topics: [], tone: [], avoid: [],
@@ -37,6 +38,7 @@ const slug = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,
 /** Create / edit a persona (stored in the database via /personas). */
 export function PersonaEditor({ persona, onClose }: { persona: Persona | null | "new"; onClose: () => void }) {
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const isNew = persona === "new"
   const [p, setP] = useState<Persona>(EMPTY_PERSONA)
   const [idTouched, setIdTouched] = useState(false)
@@ -169,7 +171,7 @@ export function PersonaEditor({ persona, onClose }: { persona: Persona | null | 
           <div className="flex items-center justify-between gap-2 border-t border-border pt-4">
             {!isNew ? (
               <Button type="button" variant="ghost" className="text-fail hover:text-fail" disabled={del.isPending}
-                onClick={() => { if (confirm(`Delete persona ${p.id}? Only possible when it owns no projects or B-roll.`)) del.mutate() }}>
+                onClick={async () => { if (await confirm({ title: "Delete this persona?", subject: `${p.name} · ${p.id}`, description: "Only possible while it owns no projects or B-roll clips. Its settings are removed from the database.", confirmLabel: "Delete persona" })) del.mutate() }}>
                 <Trash2 className="size-4" /> Delete
               </Button>
             ) : <span />}
