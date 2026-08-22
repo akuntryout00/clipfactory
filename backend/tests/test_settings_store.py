@@ -66,7 +66,7 @@ def test_settings_api(client, monkeypatch):  # noqa: F811
     try:
         r = client.put("/settings/providers", json={"google_api_key": "g-123456789"})
         assert r.status_code == 200 and r.json()["fields"]["google_api_key"]["set"] is True
-        assert client.get("/system").json()["setup_required"] in (True, False)
+        assert client.get("/system").json()["setup_required"] is True  # no keys in env → first-run guard kicks in
         r = client.post("/settings/providers/test", json={"provider": "openai", "values": {"openai_api_key": ""}})
         assert r.status_code == 200 and r.json()["ok"] is False  # no key → clear message, no exception
         assert client.post("/settings/providers/test", json={"provider": "nope"}).json()["ok"] is False
