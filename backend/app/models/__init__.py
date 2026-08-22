@@ -41,6 +41,31 @@ class Persona(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class BatchStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    DONE = "DONE"
+    CANCELLED = "CANCELLED"
+    FAILED = "FAILED"
+
+
+class Batch(Base):
+    """A batch generation run (PRD §51): N projects created up-front, generated one after another in a background job."""
+
+    __tablename__ = "batches"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("batch"))
+    persona_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(32), default=BatchStatus.PENDING.value)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class AppSetting(Base):
     """Key/value store for UI-editable global settings (e.g. key 'captions')."""
 
@@ -124,6 +149,7 @@ class VideoProject(Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # per-project caption overrides (font, size, position…) on top of the global caption settings; None = use defaults
     caption_overrides: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     scenes: Mapped[list[VideoScene]] = relationship(back_populates="project", cascade="all, delete-orphan")
     voices: Mapped[list[VoiceGeneration]] = relationship(back_populates="project", cascade="all, delete-orphan")

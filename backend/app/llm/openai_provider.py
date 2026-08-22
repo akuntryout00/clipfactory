@@ -19,6 +19,7 @@ from app.schemas.pipeline import (
     PersonaDraft,
     ScenePlanOutput,
     ScriptOutput,
+    TopicIdeasOutput,
     WordTiming,
 )
 
@@ -95,6 +96,13 @@ class OpenAIProvider:
 
     def rank_assets(self, *, topic: str, scenes: list[NormalizedScene], candidates: dict[int, list[dict]]) -> AssetRankOutput:
         return self._parse(prompts.RANK_SYSTEM, prompts.rank_user_prompt(topic, scenes, candidates), AssetRankOutput, temperature=0.3)
+
+    def generate_topics(
+        self, *, persona: PersonaConfig, templates: list[TemplateConfig], counts: dict[str, int], exclude: list[str]
+    ) -> TopicIdeasOutput:
+        return self._parse(
+            prompts.TOPICS_SYSTEM, prompts.topics_user_prompt(persona, templates, counts, exclude), TopicIdeasOutput, temperature=0.9
+        )
 
     def draft_persona(self, *, name: str, age: int | None, location: str | None, language: str, about: str) -> PersonaDraft:
         return self._parse(

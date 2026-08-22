@@ -14,6 +14,8 @@ from app.schemas.pipeline import (
     ScenePlanOutput,
     ScriptOutput,
     ScriptSection,
+    TopicIdea,
+    TopicIdeasOutput,
     WordTiming,
 )
 
@@ -165,6 +167,15 @@ class FakeLLM:
                 for a in assets
             ]
         )
+
+    def generate_topics(
+        self, *, persona: PersonaConfig, templates: list[TemplateConfig], counts: dict[str, int], exclude: list[str]
+    ) -> TopicIdeasOutput:
+        items = []
+        for t in templates:
+            for i in range(counts.get(t.id, 0)):
+                items.append(TopicIdea(topic=f"{t.id} idea {i + 1} about {persona.topics[i % len(persona.topics)]}", template_id=t.id))
+        return TopicIdeasOutput(items=items)
 
     def draft_persona(self, *, name: str, age: int | None, location: str | None, language: str, about: str) -> PersonaDraft:
         role = about.strip().split(".")[0][:40] or "Creator"

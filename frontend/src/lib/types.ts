@@ -28,7 +28,14 @@ export interface Project {
   script: string | null; script_version: number; voice_version: number; plan_version: number; render_version: number
   current_render_id: string | null; created_at: string; updated_at: string; approved_at: string | null
   scenes: Scene[]; renders: RenderInfo[]; events: EventInfo[]; video_url: string | null
-  caption_overrides: CaptionOverrides | null; caption_style: CaptionStyle | null
+  caption_overrides: CaptionOverrides | null; caption_style: CaptionStyle | null; batch_id?: string | null
+}
+export type BatchStatus = "PENDING" | "RUNNING" | "DONE" | "CANCELLED" | "FAILED"
+export interface Batch {
+  id: string; persona_id: string; name: string; status: BatchStatus; total: number; done: number; failed: number; running: number
+  pending: number; approved: number; config: { count?: number; template_ids?: string[] | null; topics_source?: string; target_duration?: number | null }
+  error: string | null; cancel_requested: boolean; created_at: string; updated_at: string; finished_at: string | null
+  projects?: Project[]
 }
 /** font / size / position overrides; null = keep the template's caption style */
 export interface CaptionOverrides {

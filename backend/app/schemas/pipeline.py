@@ -208,3 +208,12 @@ class PersonaDraft(BaseModel):
     tools: list[str] = Field(description="3-6 tools/apps/brands the persona really uses, 'Name (what for)' form; [] if unknown")
     closing_style: str = Field(description="punchline_no_cta | question | soft_follow")
     product_mention_policy: str = Field(description="never | occasional_soft | problem_solution_only")
+
+
+class TopicIdea(BaseModel):
+    topic: str = Field(description="Video topic written the way the hook could sound; first person where natural; <= 120 chars")
+    template_id: str = Field(description="One of the allowed template ids")
+
+
+class TopicIdeasOutput(BaseModel):
+    items: list[TopicIdea]

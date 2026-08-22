@@ -1,4 +1,4 @@
-import type { Artifacts, Asset, Candidate, CaptionOverrides, CaptionStyle, ClipAnalysis, FontInfo, LabEstimate, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
+import type { Artifacts, Asset, Batch, Candidate, CaptionOverrides, CaptionStyle, ClipAnalysis, FontInfo, LabEstimate, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
 
 export const API = import.meta.env.VITE_API_BASE || "/api"
 
@@ -26,7 +26,7 @@ export const api = {
     req<Persona>("/personas/draft", { method: "POST", body: JSON.stringify(body) }),
   updatePersona: (p: Persona) => req<Persona>(`/personas/${p.id}`, { method: "PUT", body: JSON.stringify(p) }),
   deletePersona: (id: string) => req<void>(`/personas/${id}`, { method: "DELETE" }),
-  projects: (persona?: string) => req<Project[]>(`/projects${persona ? `?persona=${encodeURIComponent(persona)}` : ""}`),
+  projects: (persona?: string) => req<Project[]>(`/projects?limit=200${persona ? `&persona=${encodeURIComponent(persona)}` : ""}`),
   project: (id: string) => req<Project>(`/projects/${id}`),
   createProject: (body: { topic: string; template_id: string; target_duration?: number; persona_id?: string }) =>
     req<Project>("/projects", { method: "POST", body: JSON.stringify(body) }),
@@ -36,6 +36,12 @@ export const api = {
   approve: (id: string) => req<Project>(`/projects/${id}/approve`, { method: "POST" }),
   setProjectCaptions: (id: string, overrides: CaptionOverrides | null) =>
     req<Project>(`/projects/${id}/captions`, { method: "PUT", body: JSON.stringify({ overrides }) }),
+  batches: (persona?: string) => req<Batch[]>(`/batches${persona ? `?persona=${encodeURIComponent(persona)}` : ""}`),
+  batch: (id: string) => req<Batch>(`/batches/${id}`),
+  createBatch: (body: { persona_id: string; count: number; template_ids?: string[] | null; topics?: string[] | null; target_duration?: number | null; name?: string | null }) =>
+    req<Batch>("/batches", { method: "POST", body: JSON.stringify(body) }),
+  cancelBatch: (id: string) => req<Batch>(`/batches/${id}/cancel`, { method: "POST" }),
+  resumeBatch: (id: string) => req<Batch>(`/batches/${id}/resume`, { method: "POST" }),
   captionSettings: () => req<{ overrides: CaptionOverrides; defaults: CaptionStyle }>("/settings/captions"),
   saveCaptionSettings: (overrides: CaptionOverrides) => req<{ overrides: CaptionOverrides }>("/settings/captions", { method: "PUT", body: JSON.stringify({ overrides }) }),
   fonts: () => req<{ fonts_dir: string; fonts: FontInfo[] }>("/fonts"),

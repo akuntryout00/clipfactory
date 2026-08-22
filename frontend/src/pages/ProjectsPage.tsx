@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Plus, Trash2 } from "lucide-react"
+import { Layers, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { api, fmtDate } from "@/lib/api"
 import { personaLabel, usePersona } from "@/lib/persona"
 import type { Project } from "@/lib/types"
 import { PageHeader } from "@/components/PageHeader"
 import { StatusBadge } from "@/components/StatusBadge"
+import { BatchDialog, BatchList } from "@/components/BatchPanel"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useConfirm } from "@/components/ConfirmDialog"
@@ -20,6 +21,8 @@ export default function ProjectsPage() {
   const confirm = useConfirm()
   const [status, setStatus] = useState("ALL")
   const [tpl, setTpl] = useState("ALL")
+  const [batchOpen, setBatchOpen] = useState(false)
+  const [batchSel, setBatchSel] = useState<string | null>(null)
   const { activeId, active } = usePersona()
   const { data, isLoading } = useQuery({
     queryKey: ["projects", activeId], queryFn: () => api.projects(activeId || undefined), enabled: !!activeId,
@@ -30,7 +33,7 @@ export default function ProjectsPage() {
     onSuccess: () => { toast.success("Project deleted"); qc.invalidateQueries({ queryKey: ["projects"] }) },
     onError: e => toast.error(e.message),
   })
-  const rows = useMemo(() => (data ?? []).filter(p => (status === "ALL" || p.status === status) && (tpl === "ALL" || p.template_id === tpl)), [data, status, tpl])
+  const rows = useMemo(() => (data ?? []).filter(p => (status === "ALL" || p.status === status) && (tpl === "ALL" || p.template_id === tpl) && (!batchSel || p.batch_id === batchSel)), [data, status, tpl, batchSel])
   const templates = useMemo(() => Array.from(new Set((data ?? []).map(p => p.template_id))).sort(), [data])
   const counts = useMemo(() => {
     const c: Record<string, number> = {}
@@ -41,11 +44,15 @@ export default function ProjectsPage() {
   return (
     <div>
       <PageHeader eyebrow="Production line" title="Projects"
-        actions={<Button onClick={() => nav("/generate")}><Plus className="size-4" /> New video</Button>}>
+        actions={<>
+          <Button variant="outline" onClick={() => setBatchOpen(true)}><Layers className="size-4" /> Batch</Button>
+          <Button onClick={() => nav("/generate")}><Plus className="size-4" /> New video</Button>
+        </>}>
         <p className="mt-1 text-sm text-muted-foreground">
           <span className="text-foreground">{personaLabel(active)}</span> · {data?.length ?? 0} projects · {counts.READY ?? 0} ready · {counts.APPROVED ?? 0} approved · {counts.FAILED ?? 0} failed
         </p>
       </PageHeader>
+      <BatchList selected={batchSel} onSelect={setBatchSel} />
       <div className="flex items-center gap-2 px-8 py-4">
         <select value={status} onChange={e => setStatus(e.target.value)} className="h-8 rounded-md border border-input bg-card px-2 text-sm">
           <option value="ALL">All statuses</option>
@@ -98,6 +105,7 @@ export default function ProjectsPage() {
           </TableBody>
         </Table>
       </div>
+      <BatchDialog open={batchOpen} onClose={() => setBatchOpen(false)} onStarted={b => { setBatchSel(b.id); qc.invalidateQueries({ queryKey: ["batches"] }); qc.invalidateQueries({ queryKey: ["projects"] }) }} />
     </div>
   )
 }

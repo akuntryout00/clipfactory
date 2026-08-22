@@ -54,12 +54,13 @@ def create_app(
         CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Range", "Accept-Ranges"]
     )
 
-    from app.api.routes import assets, meta, projects
+    from app.api.routes import assets, batches, meta, projects
     from app.lab.api import router as lab_router
 
     app.include_router(meta.router)
     app.include_router(assets.router)
     app.include_router(projects.router)
+    app.include_router(batches.router)
     app.include_router(lab_router)
     return app
 

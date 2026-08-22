@@ -13,6 +13,7 @@ from app.schemas.pipeline import (
     PersonaDraft,
     ScenePlanOutput,
     ScriptOutput,
+    TopicIdeasOutput,
     WordTiming,
 )
 
@@ -45,6 +46,10 @@ class LLMProvider(Protocol):
     def rank_assets(self, *, topic: str, scenes: list[NormalizedScene], candidates: dict[int, list[dict]]) -> AssetRankOutput: ...
 
     def draft_persona(self, *, name: str, age: int | None, location: str | None, language: str, about: str) -> PersonaDraft: ...
+
+    def generate_topics(
+        self, *, persona: PersonaConfig, templates: list[TemplateConfig], counts: dict[str, int], exclude: list[str]
+    ) -> TopicIdeasOutput: ...
 
 
 def get_llm(provider: str | None = None) -> LLMProvider:

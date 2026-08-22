@@ -148,6 +148,9 @@ class ProjectService:
 
     # ---------- project CRUD ----------
 
+    def _persona(self, persona_id: str) -> PersonaConfig:
+        return persona_or_config(self.session, persona_id, self.configs_dir)
+
     def caption_style_for(self, p: VideoProject, template: TemplateConfig) -> CaptionStyleConfig:
         """Template caption style → global caption settings (System) → this project's overrides."""
         from app.captions.settings import resolve_caption_style

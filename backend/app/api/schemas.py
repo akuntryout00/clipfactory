@@ -68,6 +68,7 @@ class ProjectOut(BaseModel):
     events: list[EventOut] = []
     video_url: str | None = None
     caption_overrides: dict | None = None
+    batch_id: str | None = None
     caption_style: dict | None = None  # effective style (template → global → project), for the UI preview
 
 

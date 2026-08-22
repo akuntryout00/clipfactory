@@ -211,3 +211,23 @@ def persona_draft_user_prompt(*, name: str, age: int | None, location: str | Non
         f"Name: {name}\nAge: {age if age is not None else 'unknown'}\nLocation: {location or 'unknown'}\n"
         f"Language of the videos: {language}\n\nAbout this person (free text from the user):\n{about.strip()}\n"
     )
+
+
+TOPICS_SYSTEM = (
+    "You generate video topics for a short-form creator persona (vertical 15-25 s videos with voice-over and B-roll). Topics must "
+    "come from the persona's content pillars and lived experience, be specific and concrete (a real situation, habit, mistake, "
+    "small system — not generic advice), and be phrased the way the video's first line could sound. Respect the persona's "
+    "'avoid' list. Each topic fits one of the allowed templates: story = narrative/insight, list = '3 things…', pov = starts with "
+    "'POV:' and describes a relatable moment, problem_solution = names a concrete problem. Spread topics across the requested "
+    "template counts exactly. No duplicates, no near-duplicates, none from the exclusion list. Output JSON only."
+)
+
+
+def topics_user_prompt(persona: PersonaConfig, templates: list[TemplateConfig], counts: dict[str, int], exclude: list[str]) -> str:
+    tl = "\n".join(f"- {t.id}: {t.description} (need {counts.get(t.id, 0)})" for t in templates)
+    ex = "\n".join(f"- {x}" for x in exclude[:80]) or "- (none)"
+    return (
+        f"{persona_block(persona)}\n\nTEMPLATES AND HOW MANY TOPICS EACH:\n{tl}\n\n"
+        f"ALREADY USED TOPICS (do not repeat or paraphrase):\n{ex}\n\n"
+        f"Generate exactly {sum(counts.values())} topics in the persona's video language ({persona.language})."
+    )
