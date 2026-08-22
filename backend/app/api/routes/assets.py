@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import assets_dir, get_db, storage_dir
+from app.api.deps import assets_dir, cfg_dir, get_db, storage_dir
 from app.api.media import ranged_file, thumbnail_for
 from app.api.schemas import AssetOut, AssetPatch
 from app.assets.importer import VIDEO_EXT, import_assets, register_asset_file
@@ -24,23 +24,25 @@ router = APIRouter()
 
 # ---------- assets ----------
 @router.get("/assets", response_model=list[AssetOut])
-def assets(db: Session = Depends(get_db), approved: bool | None = None):
+def assets(db: Session = Depends(get_db), approved: bool | None = None, persona: str | None = None):
     q = select(Asset).order_by(Asset.id)
     if approved is not None:
         q = q.where(Asset.approved.is_(approved))
+    if persona:
+        q = q.where(Asset.persona_id == persona)
     return list(db.execute(q).scalars())
 
 
 @router.get("/assets/search")
-def assets_search(q: str, limit: int = 10, db: Session = Depends(get_db)):
+def assets_search(q: str, limit: int = 10, persona: str | None = None, db: Session = Depends(get_db)):
     tags = extract_query_tags(q.split())
-    return [c.as_dict() for c in find_candidates(db, tags, limit=limit)]
+    return [c.as_dict() for c in find_candidates(db, tags, limit=limit, persona_id=persona)]
 
 
 @router.post("/assets/import")
 def assets_import(request: Request, db: Session = Depends(get_db), approve_unseeded: bool = False):
     assets_dir = Path(request.app.state.service_kwargs.get("assets_dir") or get_settings().assets_dir)
-    rep = import_assets(db, assets_dir, approve_unseeded=approve_unseeded)
+    rep = import_assets(db, assets_dir, approve_unseeded=approve_unseeded, default_persona=get_settings().default_persona)
     return {"created": rep.created, "updated": rep.updated, "errors": rep.errors}
 
 
@@ -115,6 +117,7 @@ async def asset_upload(
     shot: str | None = Form(None),
     mood: str | None = Form(None),
     quality_score: float | None = Form(None),
+    persona_id: str | None = Form(None),
     enrich: bool = True,
     db: Session = Depends(get_db),
 ):
@@ -127,11 +130,18 @@ async def asset_upload(
     cat = re.sub(r"[^a-z0-9_\-]", "", raw_cat)
     if not cat or cat != raw_cat or cat.startswith("_"):
         raise HTTPException(400, "category must be a simple folder name, e.g. desk, phone, walking")
+    from app.personas.repo import persona_or_config
+
+    pid = (persona_id or get_settings().default_persona or "").strip()
+    try:
+        persona_or_config(db, pid, cfg_dir(request))
+    except (FileNotFoundError, KeyError):
+        raise HTTPException(404, f"persona not found: {pid or '(none)'} — pick a persona for this clip")
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in VIDEO_EXT:
         raise HTTPException(400, f"unsupported file type {suffix or '(none)'}; allowed: {', '.join(sorted(VIDEO_EXT))}")
     stem = re.sub(r"[^a-z0-9]+", "_", Path(file.filename or "clip").stem.lower()).strip("_") or "clip"
-    folder = assets_dir(request) / cat
+    folder = assets_dir(request) / pid / cat
     folder.mkdir(parents=True, exist_ok=True)
     dest = folder / f"{stem}{suffix}"
     n = 2
@@ -156,6 +166,7 @@ async def asset_upload(
             shot=shot or None,
             mood=mood or None,
             quality_score=quality_score if quality_score is not None else 0.8,
+            persona_id=pid,
         )
     except Exception as exc:  # noqa: BLE001
         dest.unlink(missing_ok=True)

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.assets.catalog import library_summary
 from app.assets.selector import extract_query_tags, find_candidates
-from app.config.loaders import list_templates, load_caption_style, load_persona, load_template
+from app.config.loaders import list_templates, load_caption_style, load_template
 from app.config.settings import get_settings
 from app.content.asset_assignment import assign_assets
 from app.content.scene_planner import heuristic_plan, normalize_plan
@@ -32,6 +32,7 @@ from app.models import (
     VoiceGeneration,
     utcnow,
 )
+from app.personas.repo import persona_or_config
 from app.renderer.ffmpeg import RenderOptions, render_video
 from app.renderer.qc import run_qc
 from app.schemas.configs import PersonaConfig, TemplateConfig
@@ -129,14 +130,16 @@ class ProjectService:
         self.progress("FAILED", p.error)
 
     def _configs(self, p: VideoProject) -> tuple[PersonaConfig, TemplateConfig]:
-        return load_persona(p.persona_id, self.configs_dir), load_template(p.template_id, self.configs_dir)
+        return persona_or_config(self.session, p.persona_id, self.configs_dir), load_template(p.template_id, self.configs_dir)
 
     # ---------- project CRUD ----------
 
     def create_project(
         self, topic: str, template_id: str, persona_id: str | None = None, target_duration: float | None = None
     ) -> VideoProject:
-        persona = load_persona(persona_id or get_settings().default_persona, self.configs_dir)
+        persona = persona_or_config(
+            self.session, persona_id or get_settings().default_persona, self.configs_dir
+        )  # FileNotFoundError if unknown
         template = load_template(template_id, self.configs_dir)  # raises FileNotFoundError if unknown
         td = float(target_duration if target_duration is not None else persona.target_duration or template.duration.target)
         if not (MIN_TARGET <= td <= MAX_TARGET):
@@ -153,8 +156,11 @@ class ProjectService:
     def get_project(self, project_id: str) -> VideoProject:
         return self._get(project_id)
 
-    def list_projects(self, limit: int = 50) -> list[VideoProject]:
-        return list(self.session.execute(select(VideoProject).order_by(VideoProject.created_at.desc()).limit(limit)).scalars())
+    def list_projects(self, limit: int = 50, persona_id: str | None = None) -> list[VideoProject]:
+        q = select(VideoProject).order_by(VideoProject.created_at.desc())
+        if persona_id:
+            q = q.where(VideoProject.persona_id == persona_id)
+        return list(self.session.execute(q.limit(limit)).scalars())
 
     # ---------- stages ----------
 
@@ -443,7 +449,7 @@ class ProjectService:
                 select(VideoScene).where(VideoScene.project_id == p.id, VideoScene.plan_version == p.plan_version)
             ).scalars()
         }
-        cands = find_candidates(self.session, tags, limit=limit, exclude_ids=current, min_relevance=-1.0)
+        cands = find_candidates(self.session, tags, limit=limit, exclude_ids=current, min_relevance=-1.0, persona_id=p.persona_id)
         return [c.as_dict() for c in cands]
 
     def override_scene_asset(self, project_id: str, scene_order: int, asset_id: str) -> VideoProject:

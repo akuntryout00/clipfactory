@@ -190,6 +190,43 @@ def assets_enrich(
     typer.echo(f"enriched {n} assets")
 
 
+@assets_app.command("migrate-personas")
+def assets_migrate_personas(to: str = typer.Option(..., "--to", help="persona id that owns the legacy clips")):
+    """One-off: move legacy assets/<category>/ clips under assets/<persona>/<category>/ and set persona_id."""
+    from app.assets.importer import migrate_assets_to_persona
+    from app.personas.repo import persona_or_config
+
+    assets_dir = Path(SERVICE_KWARGS.get("assets_dir") or get_settings().assets_dir)
+    with _factory()() as s:
+        persona_or_config(s, to)  # raises if unknown
+        n = migrate_assets_to_persona(s, assets_dir, to)
+    typer.echo(f"moved {n} clips under {assets_dir / to}")
+
+
+personas_app = typer.Typer(help="Persona commands", no_args_is_help=True)
+app.add_typer(personas_app, name="personas")
+
+
+@personas_app.command("list")
+def personas_list():
+    from app.personas.repo import list_personas, seed_personas_from_configs
+
+    with _factory()() as s:
+        seed_personas_from_configs(s)
+        for p in list_personas(s):
+            who = f"{p.identity.name}, {p.identity.age or '?'}" if p.identity else "-"
+            typer.echo(f"{p.id:<22} {p.name:<30} {who}")
+
+
+@personas_app.command("seed")
+def personas_seed():
+    """Insert personas from configs/personas/*.json that are missing in the DB."""
+    from app.personas.repo import seed_personas_from_configs
+
+    with _factory()() as s:
+        typer.echo(f"seeded {seed_personas_from_configs(s)} personas")
+
+
 @assets_app.command("list")
 def assets_list(approved_only: bool = typer.Option(False)):
     from sqlalchemy import select

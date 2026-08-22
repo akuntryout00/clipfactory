@@ -107,14 +107,14 @@ def test_upload_single_video_creates_asset_file_and_row(client, mini_assets, tmp
         )
     assert r.status_code == 201, r.text
     a = r.json()
-    assert a["file"] == "desk/my_clip_1.mp4" and a["approved"] is True and a["duration"] > 2.5
+    assert a["file"] == "michael/desk/my_clip_1.mp4" and a["approved"] is True and a["duration"] > 2.5
     assert "notebook" in a["tags"] and a["description"] == "hand closes notebook"
-    assert (mini_assets / "desk" / "my_clip_1.mp4").is_file()
+    assert (mini_assets / "michael" / "desk" / "my_clip_1.mp4").is_file()
     assert a["id"] == "asset_007"
     # same name again → does not overwrite, gets a suffix
     with clip.open("rb") as f:
         r2 = client.post("/assets/upload", data={"category": "desk"}, files={"file": ("My Clip (1).mp4", f, "video/mp4")})
-    assert r2.status_code == 201 and r2.json()["file"] == "desk/my_clip_1_2.mp4" and r2.json()["approved"] is False
+    assert r2.status_code == 201 and r2.json()["file"] == "michael/desk/my_clip_1_2.mp4" and r2.json()["approved"] is False
 
 
 def test_upload_rejects_non_video_and_bad_category(client, tmp_path):

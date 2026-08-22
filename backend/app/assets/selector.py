@@ -133,9 +133,13 @@ def find_candidates(
     min_duration: float = 0.0,
     now: datetime | None = None,
     min_relevance: float = 0.0,
+    persona_id: str | None = None,
 ) -> list[Candidate]:
     exclude_ids = exclude_ids or set()
-    assets = session.execute(select(Asset).where(Asset.approved.is_(True))).scalars().all()
+    q = select(Asset).where(Asset.approved.is_(True))
+    if persona_id:
+        q = q.where(Asset.persona_id == persona_id)
+    assets = session.execute(q).scalars().all()
     cands: list[Candidate] = []
     for a in assets:
         if a.id in exclude_ids:

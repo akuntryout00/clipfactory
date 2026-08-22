@@ -61,8 +61,8 @@ def create_project(body: ProjectCreate, request: Request, db: Session = Depends(
 
 
 @router.get("/projects", response_model=list[ProjectOut])
-def list_projects(request: Request, db: Session = Depends(get_db), limit: int = 50):
-    return [_project_out(p, db) for p in svc(db, request).list_projects(limit)]
+def list_projects(request: Request, db: Session = Depends(get_db), limit: int = 50, persona: str | None = None):
+    return [_project_out(p, db) for p in svc(db, request).list_projects(limit, persona_id=persona)]
 
 
 @router.get("/projects/{project_id}", response_model=ProjectOut)

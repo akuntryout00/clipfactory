@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import sessionmaker
 
-from app.config.loaders import list_personas, list_templates
+from app.config.loaders import list_templates
 from app.config.settings import get_settings
 from app.projects.jobs import JobRunner
 
@@ -65,14 +65,13 @@ def create_app(
 
 
 def _seed_configs(factory: sessionmaker, cfg_dir: Path) -> None:
-    """Mirror persona/template configs into the DB — config files stay the source of truth."""
-    from app.models import Persona, Template
+    """Personas: seed DB from configs/personas/*.json once (DB is the source of truth afterwards).
+    Templates: mirrored into the DB for reference (config files stay the source of truth)."""
+    from app.models import Template
+    from app.personas.repo import seed_personas_from_configs
 
     with factory() as s:
-        for p in list_personas(cfg_dir):
-            row = s.get(Persona, p.id) or Persona(id=p.id, name=p.name, config={})
-            row.name, row.config = p.name, p.model_dump(exclude={"voice"})
-            s.add(row)
+        seed_personas_from_configs(s, cfg_dir)
         for t in list_templates(cfg_dir):
             row = s.get(Template, t.id) or Template(id=t.id, name=t.name, config={})
             row.name, row.config = t.name, t.model_dump()

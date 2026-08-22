@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import assets_dir, cfg_dir, get_db, storage_dir
-from app.config.loaders import list_personas, list_templates, load_caption_style
+from app.config.loaders import list_templates, load_caption_style
 from app.config.settings import get_settings
 from app.models import Asset, VideoProject
 
@@ -88,14 +88,95 @@ def caption_styles(request: Request):
     return sorted(p.stem for p in (cfg_dir(request) / "captions").glob("*.json"))
 
 
+def _mask(cfg) -> dict:
+    d = cfg.model_dump()
+    if d.get("voice", {}).get("voice_id"):
+        d["voice"]["voice_id_set"] = True
+    return d
+
+
+def _persona_id_ok(pid: str) -> bool:
+    import re
+
+    return bool(re.fullmatch(r"[a-z0-9][a-z0-9_\-]{1,40}", pid or ""))
+
+
 @router.get("/personas")
-def personas(request: Request):
-    out = []
-    for p in list_personas(cfg_dir(request)):
-        d = p.model_dump()
-        d["voice"]["voice_id"] = "***" if d["voice"]["voice_id"] else ""
-        out.append(d)
-    return out
+def personas(request: Request, db: Session = Depends(get_db)):
+    from app.personas.repo import list_personas, seed_personas_from_configs
+
+    rows = list_personas(db)
+    if not rows:  # first run: seed from configs
+        seed_personas_from_configs(db, cfg_dir(request))
+        rows = list_personas(db)
+    return [_mask(p) for p in rows]
+
+
+@router.get("/personas/{persona_id}")
+def persona_get(persona_id: str, db: Session = Depends(get_db)):
+    from app.personas.repo import get_persona
+
+    try:
+        return _mask(get_persona(db, persona_id))
+    except KeyError:
+        raise HTTPException(404, "persona not found")
+
+
+def _validate_persona(body: dict):
+    from pydantic import ValidationError
+
+    from app.schemas.configs import PersonaConfig
+
+    body = dict(body)
+    body.pop("voice_id_set", None)
+    if isinstance(body.get("voice"), dict):
+        body["voice"].pop("voice_id_set", None)
+    if not _persona_id_ok(str(body.get("id", ""))):
+        raise HTTPException(422, "persona id must be lowercase letters/digits/underscores, e.g. anna_designer")
+    try:
+        return PersonaConfig.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(422, exc.errors()[0].get("msg", "invalid persona") if exc.errors() else "invalid persona")
+
+
+@router.post("/personas", status_code=201)
+def persona_create(body: dict, db: Session = Depends(get_db)):
+    from app.models import Persona
+    from app.personas.repo import upsert_persona
+
+    cfg = _validate_persona(body)
+    if db.get(Persona, cfg.id) is not None:
+        raise HTTPException(409, f"persona {cfg.id} already exists")
+    return _mask(upsert_persona(db, cfg))
+
+
+@router.put("/personas/{persona_id}")
+def persona_update(persona_id: str, body: dict, db: Session = Depends(get_db)):
+    from app.models import Persona
+    from app.personas.repo import upsert_persona
+
+    if db.get(Persona, persona_id) is None:
+        raise HTTPException(404, "persona not found")
+    if body.get("id") != persona_id:
+        raise HTTPException(422, "persona id in body must match the URL (ids cannot be renamed)")
+    return _mask(upsert_persona(db, _validate_persona(body)))
+
+
+@router.delete("/personas/{persona_id}", status_code=204)
+def persona_delete(persona_id: str, db: Session = Depends(get_db)):
+    from sqlalchemy import func
+
+    from app.models import Persona
+    from app.personas.repo import delete_persona
+
+    if db.get(Persona, persona_id) is None:
+        raise HTTPException(404, "persona not found")
+    n_assets = db.execute(select(func.count()).select_from(Asset).where(Asset.persona_id == persona_id)).scalar_one()
+    n_projects = db.execute(select(func.count()).select_from(VideoProject).where(VideoProject.persona_id == persona_id)).scalar_one()
+    if n_assets or n_projects:
+        raise HTTPException(409, f"persona still owns {n_assets} clips and {n_projects} projects — move or delete them first")
+    delete_persona(db, persona_id)
+    return Response(status_code=204)
 
 
 @router.get("/system")

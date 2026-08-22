@@ -76,7 +76,7 @@ def test_write_ass_contains_style_and_events(tmp_path: Path):
 
 
 def test_assign_assets_builds_valid_video_json(session, mini_assets, tmp_path: Path):
-    import_assets(session, mini_assets)
+    import_assets(session, mini_assets, default_persona="young_professional")
     tpl = load_template("story_v1")
     persona = load_persona("young_professional")
     text = (
@@ -125,7 +125,7 @@ def test_assign_assets_builds_valid_video_json(session, mini_assets, tmp_path: P
 
 
 def test_assign_assets_render_again_changes_offsets(session, mini_assets):
-    import_assets(session, mini_assets)
+    import_assets(session, mini_assets, default_persona="young_professional")
     tpl = load_template("story_v1")
     persona = load_persona("young_professional")
     text = " ".join(["typing laptop desk work"] * 10)
@@ -151,7 +151,7 @@ def test_assign_assets_render_again_changes_offsets(session, mini_assets):
 
 
 def test_assign_assets_change_assets_excludes_previous(session, mini_assets):
-    import_assets(session, mini_assets)
+    import_assets(session, mini_assets, default_persona="young_professional")
     tpl = load_template("story_v1")
     persona = load_persona("young_professional")
     text = " ".join(["typing laptop desk work"] * 4)

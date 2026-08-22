@@ -53,6 +53,7 @@ class Asset(Base):
     __tablename__ = "assets"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     file: Mapped[str] = mapped_column(String(512), unique=True)
+    persona_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     action: Mapped[str | None] = mapped_column(String(64), nullable=True)

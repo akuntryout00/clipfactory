@@ -83,11 +83,28 @@ def iter_asset_files(root: Path):
         yield p
 
 
-def import_assets(session: Session, assets_dir: Path, approve_unseeded: bool = False) -> ImportReport:
+def _persona_ids(session: Session) -> set[str]:
+    from app.models import Persona
+
+    return {pid for (pid,) in session.execute(select(Persona.id)).all()}
+
+
+def persona_for_path(rel: str, persona_ids: set[str], default_persona: str | None) -> str | None:
+    """assets/<persona>/<category>/file → persona; legacy assets/<category>/file → default persona."""
+    first = rel.split("/")[0] if "/" in rel else ""
+    return first if first in persona_ids else default_persona
+
+
+def import_assets(session: Session, assets_dir: Path, approve_unseeded: bool = False, default_persona: str | None = None) -> ImportReport:
     report = ImportReport()
     seed = _load_seed(assets_dir)
     existing = {a.file: a for a in session.execute(select(Asset)).scalars().all()}
     reserved = {d["id"] for d in seed.values() if "id" in d}
+    personas = _persona_ids(session)
+    if default_persona is None:
+        from app.config.settings import get_settings
+
+        default_persona = get_settings().default_persona
     for path in iter_asset_files(assets_dir):
         rel = path.relative_to(assets_dir).as_posix()
         try:
@@ -107,6 +124,8 @@ def import_assets(session: Session, assets_dir: Path, approve_unseeded: bool = F
         asset.duration = round(meta.duration, 3)
         asset.width, asset.height, asset.fps = meta.width, meta.height, round(meta.fps, 3)
         asset.orientation, asset.codec = meta.orientation, meta.codec
+        if not asset.persona_id:
+            asset.persona_id = persona_for_path(rel, personas, default_persona)
         if is_new:
             tags = list(s.get("tags") or [])
             desc = s.get("description")
@@ -146,6 +165,7 @@ def register_asset_file(
     location: str | None = None,
     shot: str | None = None,
     mood: str | None = None,
+    persona_id: str | None = None,
 ) -> Asset:
     """Create one Asset row for a file already placed under assets_dir (used by single-file upload)."""
     meta = probe_video(assets_dir / rel)
@@ -157,6 +177,7 @@ def register_asset_file(
     asset = Asset(
         id=_next_asset_id(session, set()),
         file=rel,
+        persona_id=persona_id or persona_for_path(rel, _persona_ids(session), None),
         description=description,
         tags=tags,
         action=action or sem["action"],
@@ -178,3 +199,27 @@ def register_asset_file(
     session.commit()
     session.refresh(asset)
     return asset
+
+
+def migrate_assets_to_persona(session: Session, assets_dir: Path, persona_id: str) -> int:
+    """One-off: move legacy `assets/<category>/file` clips under `assets/<persona>/<category>/file` and set persona_id."""
+    import shutil
+
+    personas = _persona_ids(session) | {persona_id}
+    moved = 0
+    for a in session.execute(select(Asset)).scalars().all():
+        first = a.file.split("/")[0]
+        if first in personas:
+            if not a.persona_id:
+                a.persona_id = first
+            continue
+        src = assets_dir / a.file
+        new_rel = f"{persona_id}/{a.file}"
+        dst = assets_dir / new_rel
+        if src.is_file():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(dst))
+        a.file, a.persona_id = new_rel, persona_id
+        moved += 1
+    session.commit()
+    return moved

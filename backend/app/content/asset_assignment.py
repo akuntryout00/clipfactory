@@ -24,22 +24,32 @@ def select_assets_for_scenes(
     topic: str,
     scenes: list[NormalizedScene],
     exclude_asset_ids: set[str] | None = None,
+    persona_id: str | None = None,
 ) -> dict[int, Asset]:
-    """Backend filtering → LLM ranking → validated, unique asset per scene (fallback: best score)."""
+    """Backend filtering → LLM ranking → validated, unique asset per scene (fallback: best score). Scoped to one persona's library."""
     exclude = set(exclude_asset_ids or ())
-    n_approved = session.execute(select(func.count()).select_from(Asset).where(Asset.approved.is_(True))).scalar_one()
+    cnt_q = select(func.count()).select_from(Asset).where(Asset.approved.is_(True))
+    if persona_id:
+        cnt_q = cnt_q.where(Asset.persona_id == persona_id)
+    n_approved = session.execute(cnt_q).scalar_one()
     limit = candidate_limit_for(n_approved)
     small = limit >= n_approved  # whole catalog goes to the LLM (PRD §9 small-library mode)
     candidates: dict[int, list[Candidate]] = {}
     for sc in scenes:
         tags = extract_query_tags(sc.query_tags + [sc.intent])
         cands = find_candidates(
-            session, tags, limit=limit, exclude_ids=exclude, min_duration=sc.duration, min_relevance=-1.0 if small else 0.0
+            session,
+            tags,
+            limit=limit,
+            exclude_ids=exclude,
+            min_duration=sc.duration,
+            min_relevance=-1.0 if small else 0.0,
+            persona_id=persona_id,
         )
         if not cands:  # relax: any approved asset long enough, then any at all
-            cands = find_candidates(session, tags, limit=limit, exclude_ids=exclude, min_relevance=-1.0)
+            cands = find_candidates(session, tags, limit=limit, exclude_ids=exclude, min_relevance=-1.0, persona_id=persona_id)
         if not cands:
-            cands = find_candidates(session, tags, limit=limit, min_relevance=-1.0)
+            cands = find_candidates(session, tags, limit=limit, min_relevance=-1.0, persona_id=persona_id)
         if not cands:
             raise RuntimeError("no approved assets available — import and approve assets first")
         candidates[sc.order] = cands
@@ -65,7 +75,12 @@ def select_assets_for_scenes(
                     break
         if asset is None:  # every candidate already used → widen the search before allowing a repeat
             wider = find_candidates(
-                session, extract_query_tags(sc.query_tags + [sc.intent]), limit=50, exclude_ids=exclude | used, min_relevance=-1.0
+                session,
+                extract_query_tags(sc.query_tags + [sc.intent]),
+                limit=50,
+                exclude_ids=exclude | used,
+                min_relevance=-1.0,
+                persona_id=persona_id,
             )
             asset = wider[0].asset if wider else cands[0].asset
         used.add(asset.id)
@@ -102,7 +117,7 @@ def assign_assets(
         chosen[order] = a
     if need:
         exclude = set(exclude_asset_ids or ()) | {a.id for a in chosen.values()}
-        chosen.update(select_assets_for_scenes(session, llm, topic, need, exclude_asset_ids=exclude))
+        chosen.update(select_assets_for_scenes(session, llm, topic, need, exclude_asset_ids=exclude, persona_id=persona.id))
 
     vscenes = []
     for sc in scenes:
