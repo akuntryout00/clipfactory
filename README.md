@@ -1,5 +1,7 @@
 # ClipFactory
 
+[![CI](https://github.com/feyzilim/clipfactory/actions/workflows/ci.yml/badge.svg)](https://github.com/feyzilim/clipfactory/actions/workflows/ci.yml) [![License: Elastic-2.0](https://img.shields.io/badge/license-Elastic--2.0-blue.svg)](LICENSE)
+
 > Give it a **topic** and a **template**; get a short-form vertical video (9:16, 1080×1920 — TikTok / Reels / Shorts) made from **your own B-roll**, an **AI script**, an **AI voice** and synced captions. Plus an isolated **AI Lab** that turns a sentence into a fully AI-generated vertical video.
 
 ClipFactory is a self-hosted content pipeline you run on your own machine (Docker). It **does not post anything anywhere** — you review every video and publish it yourself. It is **not affiliated with TikTok, Meta or Google.**
