@@ -103,6 +103,16 @@ storage/       voices · renders · projects/<id>/ · lab/<id>/ · temp · thumb
 assets/        your B-roll (+ optional broll_database.json)                           (gitignored)
 ```
 
+## AI Lab example
+
+One prompt → storyboard → 3 keyframes (gpt-image-2, each using the previous frame as reference) → 2 × 10 s clips animated with **Seedance 2.0** via fal.ai → 20 s, 1080×1920.
+
+Prompt (translated): *"Pitching a camping tent by a forest lake, fixed camera the whole time. Start on the empty spot with the lake view, then the tent goes up — the person's face never clearly visible, time-lapse feel. At the end the person steps into the tent; clear sky that slowly darkens, and rain starts after they are inside."* Style: cinematic realistic.
+
+![AI Lab example — keyframes (top) and frames from the finished 20 s clip (bottom)](docs/media/ai-lab-example.jpg)
+
+Top row: the three generated keyframes. Bottom row: frames every 4 s from the final video. ▶ [Watch the MP4](https://github.com/feyzilim/clipfactory/releases/download/v0.2.0/ai-lab-example.mp4) (720×1280, 2.5 MB). Cost for this clip ≈ $6 (20 s × $0.30 + 3 low-quality images).
+
 ## Author
 
 Built by **Feyzili Mikayil** — [@feyzili](https://twitter.com/feyzili). Contributions welcome (see CONTRIBUTING.md).
