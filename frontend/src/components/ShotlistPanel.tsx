@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
+import { Link } from "react-router-dom"
 
 /**
  * Target B-roll list for the active persona: what to film, how much of it is already in the library (%), regenerate with AI.
@@ -82,7 +83,7 @@ export function ShotlistPanel({ personaId, selectedItem, onSelectItem }: { perso
 
 function ShotCard({ item, selected, onSelect }: { item: ShotlistItem; selected: boolean; onSelect: () => void }) {
   return (
-    <button type="button" onClick={onSelect} className={cn("rounded-md border p-2.5 text-left text-sm transition-colors hover:border-primary/60", selected ? "border-primary bg-primary/5" : item.done ? "border-ready/40 bg-ready/5" : "border-border bg-background")}>
+    <div role="button" tabIndex={0} onClick={onSelect} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect() } }} className={cn("cursor-pointer rounded-md border p-2.5 text-left text-sm transition-colors hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-ring", selected ? "border-primary bg-primary/5" : item.done ? "border-ready/40 bg-ready/5" : "border-border bg-background")}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate font-medium">{item.title}</div>
@@ -93,7 +94,13 @@ function ShotCard({ item, selected, onSelect }: { item: ShotlistItem; selected: 
         </span>
       </div>
       <p className="mt-1 line-clamp-2 text-xs text-muted-foreground" title={item.description}>{item.description}</p>
-    </button>
+      {selected && (
+        <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
+          <span className="font-mono text-[10px] text-muted-foreground">{item.assets.length} clip{item.assets.length === 1 ? "" : "s"} attached</span>
+          <Link to={`/ai-broll?item=${encodeURIComponent(item.id)}`} onClick={e => e.stopPropagation()} className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:opacity-90"><Sparkles className="size-3" /> Create with AI</Link>
+        </div>
+      )}
+    </div>
   )
 }
 

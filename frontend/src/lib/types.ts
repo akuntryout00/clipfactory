@@ -132,3 +132,12 @@ export interface LabVideo {
   video_provider: string | null; provider_label: string | null; supports_edit: boolean
   created_at: string; updated_at: string; keyframes: LabKeyframe[]; segments: LabSegment[]; video_url: string | null; events: LabEvent[]
 }
+
+export type AiBrollStatus = "QUEUED" | "KEYFRAME" | "ANIMATING" | "IMPORTING" | "DONE" | "FAILED"
+export interface AiBrollJob {
+  id: string; persona_id: string; shotlist_item_id: string | null; title: string; prompt: string; category: string
+  shot: string | null; action: string | null; location: string | null; mood: string | null; tags: string[]; seconds: number
+  video_provider: string; use_reference: boolean; status: AiBrollStatus; stage_message: string | null; error: string | null
+  asset_id: string | null; keyframe_url: string | null; video_url: string | null; created_at: string; updated_at: string
+}
+export interface AiBrollEstimate { provider: string; label: string; seconds: number; video_cost: number; image_cost: number; total: number; note: string }

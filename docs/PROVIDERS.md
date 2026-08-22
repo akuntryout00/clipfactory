@@ -44,3 +44,7 @@ Implement `LLMProvider` (all methods return pydantic models from `app/schemas/pi
 
 ## Keys & costs
 Keys are read from `.env` (see `.env.example`). The System page and `clipfactory doctor` show what is configured. Every provider call costs money; the AI Lab shows an estimate before you start, the content factory logs each stage.
+
+## AI B-roll
+
+Uses the same image and video providers as the AI Lab, with a single start frame per clip. With a persona photo the start frame is an identity-preserving `images.edit` at high quality (≈$0.19) and the motion prompt tells the video model to keep the face unchanged; Seedance 2.0 via fal.ai gave the most faithful faces in our tests.

@@ -84,3 +84,7 @@ SQLAlchemy 2.0, Postgres in compose, SQLite in tests. `db.init_db()` creates tab
 ## Shot list & batches
 
 `assets/shotlist.py`: `Shotlist`/`ShotlistItem` per persona (AI `generate_shotlist`, counts scaled to the target), `coverage()` (filled = min(approved assigned clips, count) per item), `match_assets()` (LLM `match_shotlist` in chunks of 40 with an action/category/tag heuristic fallback) — used on upload, on demand and after regeneration. `projects/batch.py`: `Batch` + `VideoProject.batch_id`; topics from `LLM.generate_topics` (PRD §51 template mix via `split_counts`) or user list; projects created up-front, generated sequentially in one JobRunner job; cancel flag checked between items; resume re-runs DRAFT/FAILED.
+
+## AI B-roll
+
+`aibroll/service.py`: `AiBrollJob` → keyframe via `OpenAIImageGen.generate(identity=True, quality='high')` when a persona/clip photo is given (prompt asks for high-fidelity identity), else a plain keyframe → `VideoGen.animate(first, last=None, …)` (providers accept a single start frame; fal args drop `end_image_url`) → `_normalize_segment` → copied to `assets/<persona>/<category>/ai_<id>.mp4` and registered approved with the shot's metadata (`Asset.shotlist_item_id`). Persona reference photo: `storage/personas/<id>/reference.png` (`PUT/GET/DELETE /ai-broll/personas/{id}/image`). Jobs run on the Lab job runner.

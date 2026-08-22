@@ -91,12 +91,22 @@ class FakePlanner:
 # ---------------- images ----------------
 
 
+IDENTITY_PROMPT = (
+    "The reference photo shows a REAL person. Recreate this exact same person with high-fidelity identity: same face shape, eyes, "
+    "nose, mouth, skin tone and texture, hairline and hair, facial hair, glasses and age — no beautification, no cartoon or "
+    "illustration. Photorealistic, natural light, sharp focus on the face, vertical 9:16 video still, no text, no watermark. "
+    "Scene:\n"
+)
+
+
 class ImageGen(Protocol):
     name: str
     model: str
 
-    def generate(self, *, prompt: str, out_path: Path, reference: Path | None = None) -> Path:
-        """Generate one 9:16 keyframe. `reference` = the previous keyframe image (same character/style continuity)."""
+    def generate(
+        self, *, prompt: str, out_path: Path, reference: Path | None = None, identity: bool = False, quality: str | None = None
+    ) -> Path:
+        """Generate one 9:16 keyframe. `reference` = previous keyframe (continuity) or, with identity=True, a real person's photo."""
         ...
 
 
@@ -122,24 +132,33 @@ class OpenAIImageGen:
         self.model = s.openai_image_model
         self.size = s.openai_image_size
 
-    def generate(self, *, prompt: str, out_path: Path, reference: Path | None = None) -> Path:
+    def generate(
+        self,
+        *,
+        prompt: str,
+        out_path: Path,
+        reference: Path | None = None,
+        identity: bool = False,
+        quality: str | None = None,
+    ) -> Path:
+        """reference = previous keyframe (continuity) or, with identity=True, a photo of a real person whose face must be kept."""
         out_path.parent.mkdir(parents=True, exist_ok=True)
         s = get_settings()
+        q = quality or s.openai_image_quality
         if reference is not None and reference.is_file() and not self.model.startswith("dall-e"):
-            # continuity: edit endpoint with the previous keyframe as the reference image
             edit_prompt = (
-                "Use the reference image for continuity: keep the SAME character (face, hair, wardrobe), the same place, "
+                IDENTITY_PROMPT + prompt
+                if identity
+                else "Use the reference image for continuity: keep the SAME character (face, hair, wardrobe), the same place, "
                 "palette, lens and rendering style. Now create the NEXT frame of the story:\n" + prompt
             )
-            extra = {"input_fidelity": s.openai_image_input_fidelity} if self.model == "gpt-image-1" else {}  # gpt-image-2 rejects it
+            extra = {"input_fidelity": "high" if identity else s.openai_image_input_fidelity} if self.model == "gpt-image-1" else {}
             with reference.open("rb") as fh:
-                resp = self._client.images.edit(
-                    model=self.model, image=[fh], prompt=edit_prompt, n=1, size=self.size, quality=s.openai_image_quality, **extra
-                )
+                resp = self._client.images.edit(model=self.model, image=[fh], prompt=edit_prompt, n=1, size=self.size, quality=q, **extra)
         else:
             kwargs = dict(model=self.model, prompt=prompt, n=1, size=self.size)
             if not self.model.startswith("dall-e"):
-                kwargs.update(quality=s.openai_image_quality, output_format="png")
+                kwargs.update(quality=q, output_format="png")
             resp = self._client.images.generate(**kwargs)
         data = resp.data[0]
         raw = out_path.with_suffix(".raw.png")
@@ -161,7 +180,15 @@ class FakeImageGen:
     model = "fake-image"
     _colors = ["0x3b82f6", "0xf59e0b", "0x10b981", "0xef4444", "0x8b5cf6", "0x14b8a6"]
 
-    def generate(self, *, prompt: str, out_path: Path, reference: Path | None = None) -> Path:
+    def generate(
+        self,
+        *,
+        prompt: str,
+        out_path: Path,
+        reference: Path | None = None,
+        identity: bool = False,
+        quality: str | None = None,
+    ) -> Path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         color = self._colors[sum(map(ord, prompt)) % len(self._colors)]
         subprocess.run(
@@ -192,7 +219,7 @@ class VideoGen(Protocol):
     max_seconds: int  # longest clip this provider makes in one call
     last_ref: str | None  # provider reference of the last generated clip (Omni interaction id), for conversational edits
 
-    def animate(self, *, first: Path, last: Path, prompt: str, seconds: int, out_path: Path) -> Path: ...
+    def animate(self, *, first: Path, last: Path | None, prompt: str, seconds: int, out_path: Path) -> Path: ...
 
     def edit(self, *, ref: str, instruction: str, out_path: Path) -> Path:
         """Conversational edit of a previously generated clip (raise NotImplementedError if unsupported)."""
@@ -232,16 +259,15 @@ class OmniVideoGen:
             "Use Image1 as the starting frame. Use Image2 as a reference for the end of the shot, not as a literal frame."
         )
 
-    def animate(self, *, first: Path, last: Path, prompt: str, seconds: int, out_path: Path) -> Path:
+    def animate(self, *, first: Path, last: Path | None, prompt: str, seconds: int, out_path: Path) -> Path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         b64 = lambda p: base64.b64encode(p.read_bytes()).decode()  # noqa: E731
+        images = [{"type": "image", "data": b64(first), "mime_type": "image/png"}]
+        if last is not None:
+            images.append({"type": "image", "data": b64(last), "mime_type": "image/png"})
         it = self._client.interactions.create(
             model=self.model,
-            input=[
-                {"type": "image", "data": b64(first), "mime_type": "image/png"},
-                {"type": "image", "data": b64(last), "mime_type": "image/png"},
-                {"type": "text", "text": prompt},
-            ],
+            input=[*images, {"type": "text", "text": prompt}],
             response_format={"type": "video", "aspect_ratio": "9:16", "delivery": "uri"},
             background=False,
             store=True,
@@ -319,18 +345,20 @@ class GoogleVideoGen:
         self.poll_seconds = 8
         self.timeout_seconds = 900
 
-    def animate(self, *, first: Path, last: Path, prompt: str, seconds: int, out_path: Path) -> Path:
+    def animate(self, *, first: Path, last: Path | None, prompt: str, seconds: int, out_path: Path) -> Path:
         from google.genai import types
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
         first_img = types.Image(image_bytes=first.read_bytes(), mime_type="image/png")
-        cfg = types.GenerateVideosConfig(
+        cfg_kwargs = dict(
             aspect_ratio="9:16",
             duration_seconds=seconds,
             number_of_videos=1,
             person_generation=get_settings().google_person_generation,
-            last_frame=types.Image(image_bytes=last.read_bytes(), mime_type="image/png"),
         )
+        if last is not None:
+            cfg_kwargs["last_frame"] = types.Image(image_bytes=last.read_bytes(), mime_type="image/png")
+        cfg = types.GenerateVideosConfig(**cfg_kwargs)
         try:  # new SDK signature
             src = types.GenerateVideosSource(prompt=prompt, image=first_img)
             op = self._client.models.generate_videos(model=self.model, source=src, config=cfg)
@@ -445,8 +473,9 @@ class FakeVideoGen:
         self.last_ref = f"fake_interaction_{FakeVideoGen._counter}"
         return out_path
 
-    def animate(self, *, first: Path, last: Path, prompt: str, seconds: int, out_path: Path) -> Path:
+    def animate(self, *, first: Path, last: Path | None, prompt: str, seconds: int, out_path: Path) -> Path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
+        last = last or first
         FakeVideoGen._counter += 1
         self.last_ref = f"fake_interaction_{FakeVideoGen._counter}"
         d = max(2, seconds)
@@ -635,6 +664,11 @@ def _download(url: str, dst: Path) -> None:
                 f.write(chunk)
 
 
+def clean_args(args: dict) -> dict:
+    """Drop None-valued arguments (e.g. no end frame) — fal endpoints reject explicit nulls."""
+    return {k: v for k, v in args.items() if v is not None}
+
+
 class FalVideoGen:
     """One provider class for every fal.ai video model in FAL_MODELS (official Seedance/MiniMax endpoints, Kling, …)."""
 
@@ -658,13 +692,13 @@ class FalVideoGen:
     def edit(self, *, ref: str, instruction: str, out_path: Path) -> Path:
         raise NotImplementedError("fal models do not support conversational clip editing — re-animate with a new motion prompt")
 
-    def animate(self, *, first: Path, last: Path, prompt: str, seconds: int, out_path: Path) -> Path:
+    def animate(self, *, first: Path, last: Path | None, prompt: str, seconds: int, out_path: Path) -> Path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fal = _fal()
         sec = max(self.min_seconds, min(self.max_seconds, int(seconds)))
         first_url = fal.upload_file(first)
-        last_url = fal.upload_file(last)
-        args = self.spec["args"](first_url, last_url, prompt, sec)
+        last_url = fal.upload_file(last) if last is not None else None
+        args = clean_args(self.spec["args"](first_url, last_url, prompt, sec))
         result = fal.subscribe(self.model, arguments=args, with_logs=False)
         video = (result or {}).get("video") or {}
         url = video.get("url") if isinstance(video, dict) else None

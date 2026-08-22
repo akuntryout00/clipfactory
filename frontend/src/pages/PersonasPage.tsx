@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useQueries, useQuery } from "@tanstack/react-query"
 import { Check, Pencil, Plus } from "lucide-react"
-import { api } from "@/lib/api"
+import { api, media } from "@/lib/api"
 import { personaLabel, usePersona } from "@/lib/persona"
 import type { Persona } from "@/lib/types"
 import { PageHeader } from "@/components/PageHeader"
@@ -36,7 +36,7 @@ export default function PersonasPage() {
             <Card key={p.id} className={cn(isActive && "border-primary")}>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between gap-2 font-heading">
-                  <span className="flex items-center gap-2">{personaLabel(p)}{isActive && <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] font-normal uppercase tracking-wider text-primary">active</span>}</span>
+                  <span className="flex items-center gap-2"><PersonaAvatar id={p.id} />{personaLabel(p)}{isActive && <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] font-normal uppercase tracking-wider text-primary">active</span>}</span>
                   <span className="flex items-center gap-2">
                     <span className="font-mono text-[11px] font-normal text-muted-foreground">{p.id}</span>
                     {!isActive && <Button size="sm" variant="outline" onClick={() => setActiveId(p.id)}><Check className="size-3.5" /> Use</Button>}
@@ -68,4 +68,11 @@ export default function PersonasPage() {
 function Row({ label, items }: { label: string; items: string[] }) {
   if (!items?.length) return null
   return <div className="flex flex-wrap items-baseline gap-1"><span className="mr-1 font-mono text-[11px] text-primary">{label}</span>{items.map(i => <span key={i} className="rounded bg-secondary px-1.5 py-0.5 text-[11px]">{i}</span>)}</div>
+}
+
+/** Reference photo if one was uploaded on the AI B-roll page; hidden otherwise. */
+function PersonaAvatar({ id }: { id: string }) {
+  const [ok, setOk] = useState(true)
+  if (!ok) return null
+  return <img src={media.personaImage(id)} alt="" onError={() => setOk(false)} className="size-7 rounded-full border border-border object-cover" />
 }

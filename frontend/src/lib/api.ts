@@ -1,4 +1,4 @@
-import type { Artifacts, Asset, Batch, Candidate, ProviderSettings, ProviderTestResult, Shotlist, CaptionOverrides, CaptionStyle, ClipAnalysis, FontInfo, LabEstimate, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
+import type { AiBrollEstimate, AiBrollJob, Artifacts, Asset, Batch, Candidate, ProviderSettings, ProviderTestResult, Shotlist, CaptionOverrides, CaptionStyle, ClipAnalysis, FontInfo, LabEstimate, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
 
 export const API = import.meta.env.VITE_API_BASE || "/api"
 
@@ -110,6 +110,28 @@ export const lab = {
   videoUrl: (id: string) => `${API}/lab/videos/${id}/video`,
 }
 
+export const aibroll = {
+  estimate: (provider: string, seconds: number, withReference: boolean) =>
+    req<AiBrollEstimate>(`/ai-broll/estimate?provider=${encodeURIComponent(provider)}&seconds=${seconds}&with_reference=${withReference}`),
+  jobs: (persona?: string) => req<AiBrollJob[]>(`/ai-broll/jobs${persona ? `?persona=${encodeURIComponent(persona)}` : ""}`),
+  job: (id: string) => req<AiBrollJob>(`/ai-broll/jobs/${id}`),
+  create: async (fd: FormData) => {
+    const res = await fetch(`${API}/ai-broll/jobs`, { method: "POST", body: fd })
+    if (!res.ok) { let d = res.statusText; try { d = (await res.json()).detail ?? d } catch { /* ignore */ } throw new Error(typeof d === "string" ? d : JSON.stringify(d)) }
+    return res.json() as Promise<AiBrollJob>
+  },
+  retry: (id: string) => req<AiBrollJob>(`/ai-broll/jobs/${id}/retry`, { method: "POST" }),
+  delete: (id: string) => req<void>(`/ai-broll/jobs/${id}`, { method: "DELETE" }),
+  personaImageStatus: (persona: string) => req<{ persona_id: string; has_image: boolean; image_url: string | null }>(`/ai-broll/personas/${encodeURIComponent(persona)}/image/status`),
+  uploadPersonaImage: async (persona: string, file: File) => {
+    const fd = new FormData(); fd.append("file", file)
+    const res = await fetch(`${API}/ai-broll/personas/${encodeURIComponent(persona)}/image`, { method: "PUT", body: fd })
+    if (!res.ok) { let d = res.statusText; try { d = (await res.json()).detail ?? d } catch { /* ignore */ } throw new Error(String(d)) }
+    return res.json() as Promise<{ image_url: string }>
+  },
+  deletePersonaImage: (persona: string) => req<void>(`/ai-broll/personas/${encodeURIComponent(persona)}/image`, { method: "DELETE" }),
+}
+
 export const media = {
   video: (id: string) => `${API}/projects/${id}/video`,
   voice: (id: string) => `${API}/projects/${id}/voice`,
@@ -117,6 +139,9 @@ export const media = {
   assetThumb: (id: string) => `${API}/assets/${id}/thumbnail`,
   assetFile: (id: string) => `${API}/assets/${id}/file`,
   fontFile: (name: string) => `${API}/fonts/file/${encodeURIComponent(name)}`,
+  personaImage: (persona: string, v = 0) => `${API}/ai-broll/personas/${encodeURIComponent(persona)}/image?v=${v}`,
+  aibrollKeyframe: (id: string) => `${API}/ai-broll/jobs/${id}/keyframe`,
+  aibrollVideo: (id: string) => `${API}/ai-broll/jobs/${id}/video`,
 }
 
 export const fmtTime = (s: number) => {

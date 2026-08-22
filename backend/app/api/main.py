@@ -59,6 +59,7 @@ def create_app(
         CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Range", "Accept-Ranges"]
     )
 
+    from app.aibroll.api import router as aibroll_router
     from app.api.routes import assets, batches, meta, projects, shotlist
     from app.lab.api import router as lab_router
 
@@ -68,6 +69,7 @@ def create_app(
     app.include_router(batches.router)
     app.include_router(shotlist.router)
     app.include_router(lab_router)
+    app.include_router(aibroll_router)
     return app
 
 

@@ -1,11 +1,12 @@
 import { NavLink, Route, Routes, Navigate, useLocation } from "react-router-dom"
-import { Clapperboard, FlaskConical, Film, KeyRound, LayoutList, Plus, Settings2, SlidersHorizontal, UserRound } from "lucide-react"
+import { Clapperboard, FlaskConical, Film, KeyRound, LayoutList, Plus, Settings2, SlidersHorizontal, Sparkles, UserRound } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { PersonaProvider, personaLabel, usePersona } from "@/lib/persona"
 import PersonasPage from "@/pages/PersonasPage"
 import SetupPage from "@/pages/SetupPage"
+import AiBrollPage from "@/pages/AiBrollPage"
 import ProjectsPage from "@/pages/ProjectsPage"
 import GeneratePage from "@/pages/GeneratePage"
 import ProjectPage from "@/pages/ProjectPage"
@@ -19,6 +20,7 @@ const nav = [
   { to: "/projects", label: "Projects", icon: LayoutList },
   { to: "/generate", label: "Generate", icon: Plus },
   { to: "/assets", label: "B-roll", icon: Film },
+  { to: "/ai-broll", label: "AI B-roll", icon: Sparkles },
   { to: "/personas", label: "Personas", icon: UserRound },
   { to: "/templates", label: "Templates", icon: SlidersHorizontal },
   { to: "/system", label: "System", icon: Settings2 },
@@ -112,6 +114,7 @@ function Shell() {
           <Route path="/lab" element={<LabPage />} />
           <Route path="/lab/:id" element={<LabVideoPage />} />
           <Route path="/setup" element={<SetupPage />} />
+          <Route path="/ai-broll" element={<AiBrollPage />} />
         </Routes>
         </SetupGuard>
       </main>

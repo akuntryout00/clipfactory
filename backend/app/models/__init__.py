@@ -95,6 +95,35 @@ class ShotlistItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class AiBrollJob(Base):
+    """AI B-roll: one generated clip (keyframe → video model) that lands in the persona's library."""
+
+    __tablename__ = "ai_broll_jobs"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("aib"))
+    persona_id: Mapped[str] = mapped_column(String(64), index=True)
+    shotlist_item_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    title: Mapped[str] = mapped_column(String(128))
+    prompt: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(64), default="ai")
+    shot: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    action: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mood: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    seconds: Mapped[int] = mapped_column(Integer, default=5)
+    video_provider: Mapped[str] = mapped_column(String(64), default="fal:seedance-2.0")
+    use_reference: Mapped[bool] = mapped_column(Boolean, default=False)
+    reference_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="QUEUED")  # QUEUED | KEYFRAME | ANIMATING | IMPORTING | DONE | FAILED
+    stage_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    keyframe_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    video_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    asset_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class AppSetting(Base):
     """Key/value store for UI-editable global settings (e.g. key 'captions')."""
 
