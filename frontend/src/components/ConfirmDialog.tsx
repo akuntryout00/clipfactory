@@ -27,16 +27,16 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={value}>
       {children}
       <Dialog open={opts !== null} onOpenChange={o => { if (!o) settle(false) }}>
-        <DialogContent className="sm:max-w-md" showCloseButton={false}>
+        <DialogContent className="overflow-hidden sm:max-w-md" showCloseButton={false}>
           {opts && (
             <>
-              <DialogHeader>
-                <div className="flex items-start gap-3">
+              <DialogHeader className="min-w-0">
+                <div className="flex min-w-0 items-start gap-3">
                   <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-md bg-fail/15 text-fail"><AlertTriangle className="size-4" /></span>
-                  <div className="min-w-0 space-y-1">
+                  <div className="min-w-0 flex-1 space-y-1.5">
                     <DialogTitle className="font-heading">{opts.title}</DialogTitle>
-                    {opts.subject && <div className="truncate rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground" title={opts.subject}>{opts.subject}</div>}
-                    {opts.description && <DialogDescription>{opts.description}</DialogDescription>}
+                    {opts.subject && <div className="line-clamp-2 max-w-full break-words rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] leading-relaxed text-muted-foreground" title={opts.subject}>{opts.subject}</div>}
+                    {opts.description && <DialogDescription className="text-muted-foreground">{opts.description}</DialogDescription>}
                   </div>
                 </div>
               </DialogHeader>
