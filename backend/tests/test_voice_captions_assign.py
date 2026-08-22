@@ -188,4 +188,7 @@ def test_write_ass_keeps_emphasis_tag_and_wraps_plain_text(tmp_path: Path):
     # never placed inside the colour tags, and the chunk is split over two lines
     text = line.split(",,", 1)[1]
     assert "\\N" in text and text.count("\\N") == 1
-    assert text.replace("{\\1c&H0000E5FF}", "").replace("{\\1c&H00FFFFFF}", "").split("}")[-1] in ("3 productivity\\Nhabits that", "3 productivity habits\\Nthat")
+    assert text.replace("{\\1c&H0000E5FF}", "").replace("{\\1c&H00FFFFFF}", "").split("}")[-1] in (
+        "3 productivity\\Nhabits that",
+        "3 productivity habits\\Nthat",
+    )

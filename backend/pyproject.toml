@@ -3,7 +3,8 @@ name = "clipfactory"
 version = "0.1.0"
 description = "ClipFactory — topic + template -> short-form vertical MP4 (TikTok/Reels/Shorts) from your own B-roll, plus an AI Lab for fully generated clips"
 license = { text = "Elastic-2.0" }
-authors = [{ name = "ClipFactory contributors" }]
+authors = [{ name = "Feyzili Mikayil" }]
+maintainers = [{ name = "Feyzili Mikayil (@feyzili)" }]
 keywords = ["video", "tiktok", "shorts", "reels", "ffmpeg", "ai", "elevenlabs", "openai"]
 requires-python = ">=3.11"
 dependencies = [

@@ -38,10 +38,7 @@ storage/music/*
 # ---------- media: B-roll videos stay out of git, metadata stays in ----------
 assets/**
 !assets/
-!assets/*.json
-!assets/*.csv
-!assets/_rejected/
-!assets/_rejected/*.md
+!assets/README.md
 
 # legacy manual outputs
 output/
@@ -61,3 +58,6 @@ prd.md
 
 # vite dep cache
 .vite/
+
+# ---------- private persona / library files (kept local) ----------
+configs/personas/michael.json

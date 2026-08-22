@@ -3,6 +3,8 @@
 All notable changes are documented here. Format: Keep a Changelog · SemVer.
 
 ## [Unreleased]
+### Changed
+- Open-source hygiene: example persona seed `indie_maker` (anonymized) replaces the author's personal persona in the repo; personal library files (`assets/broll_database.json`, `rename_map.csv`, `_rejected/`) are no longer tracked; complete `.env.example`; README first-run walkthrough; license/maintainer/security contact.
 ### Added
 - Per-persona **B-roll shot list**: AI plans what to film (shots grouped by folder with counts summing to a target, default 100), the B-roll page shows coverage % from the uploaded library, the list with done/missing shots, clip ↔ shot matching (AI on upload / on demand, manual in the clip editor), regenerate with a new target or guidance; personas created by the wizard get their list automatically. API `GET/POST /personas/{id}/shotlist[/generate|/match]`, `Asset.shotlist_item_id`.
 - Batch generation from the web UI (PRD §51): choose how many videos, templates (PRD mix), length, AI-picked topics (persona pillars, excluding used topics) or your own list; runs in the background, Projects page shows batch progress, stop/resume, and filters projects by batch. API `POST/GET /batches`, `/batches/{id}`, `/cancel`, `/resume`.

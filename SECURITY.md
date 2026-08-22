@@ -3,7 +3,7 @@
 ClipFactory runs locally and talks only to the AI providers you configure. Still, it stores provider API keys (`.env`) and processes files you upload.
 
 ## Reporting a vulnerability
-Please **do not** open a public issue for security problems. Email the maintainers (address in the GitHub profile of the repository owner) or use GitHub's private vulnerability reporting. Include steps to reproduce and the affected version/commit. We aim to acknowledge within 72 hours.
+Please **do not** open a public issue for security problems. Use GitHub's private vulnerability reporting on this repository, or DM the maintainer on X/Twitter: [@feyzili](https://twitter.com/feyzili). Include steps to reproduce and the affected version/commit. We aim to acknowledge within 72 hours.
 
 ## Scope / notes
 - Keys are read from `.env` and never logged; the System page only shows whether a key is set.

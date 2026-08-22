@@ -3,8 +3,22 @@
   "name": "Young Professional",
   "language": "en-US",
   "audience": "US professionals aged 20-30",
-  "topics": ["productivity", "career", "networking", "AI", "useful apps", "workplace", "technology"],
-  "tone": ["casual", "intelligent", "concise", "slightly sarcastic", "TikTok-native"],
+  "topics": [
+    "productivity",
+    "career",
+    "networking",
+    "AI",
+    "useful apps",
+    "workplace",
+    "technology"
+  ],
+  "tone": [
+    "casual",
+    "intelligent",
+    "concise",
+    "slightly sarcastic",
+    "TikTok-native"
+  ],
   "avoid": [
     "corporate language",
     "exaggerated marketing",
@@ -18,7 +32,7 @@
   "speech_rate_wps": 2.35,
   "voice": {
     "provider": "elevenlabs",
-    "voice_id": "${ELEVENLABS_VOICE_ID}",
+    "voice_id": "",
     "model_id": "eleven_multilingual_v2",
     "speed": 1.05,
     "stability": 0.55,

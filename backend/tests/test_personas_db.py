@@ -22,9 +22,9 @@ from tests.conftest import make_clip
 def test_seed_personas_from_configs_and_get(session):
     n = seed_personas_from_configs(session, CONFIGS_DIR)
     assert n >= 2
-    p = get_persona(session, "michael")
-    assert isinstance(p, PersonaConfig) and p.identity and p.identity.name == "Michael"
-    assert {x.id for x in list_personas(session)} >= {"michael", "young_professional"}
+    p = get_persona(session, "indie_maker")
+    assert isinstance(p, PersonaConfig) and p.identity and p.identity.name == "Alex"
+    assert {x.id for x in list_personas(session)} >= {"indie_maker", "young_professional"}
     assert seed_personas_from_configs(session, CONFIGS_DIR) == 0  # idempotent: existing rows untouched
 
 
@@ -44,37 +44,37 @@ def test_upsert_and_delete_persona(session):
 def test_import_assigns_persona_from_folder_and_default_for_legacy(session, tmp_path):
     root = tmp_path / "assets"
     make_clip(root / "anna" / "desk" / "typing_01.mp4", seconds=3)
-    make_clip(root / "michael" / "phone" / "scroll_01.mp4", seconds=3)
+    make_clip(root / "indie_maker" / "phone" / "scroll_01.mp4", seconds=3)
     make_clip(root / "desk" / "legacy_01.mp4", seconds=3)  # old layout → default persona
     seed_personas_from_configs(session, CONFIGS_DIR)
     upsert_persona(session, load_persona("young_professional").model_copy(update={"id": "anna", "name": "Anna"}))
-    rep = import_assets(session, root, default_persona="michael")
+    rep = import_assets(session, root, default_persona="indie_maker")
     assert rep.created == 3
     by_file = {a.file: a for a in session.query(Asset).all()}
     assert by_file["anna/desk/typing_01.mp4"].persona_id == "anna"
-    assert by_file["michael/phone/scroll_01.mp4"].persona_id == "michael"
-    assert by_file["desk/legacy_01.mp4"].persona_id == "michael"
+    assert by_file["indie_maker/phone/scroll_01.mp4"].persona_id == "indie_maker"
+    assert by_file["desk/legacy_01.mp4"].persona_id == "indie_maker"
 
 
 def test_find_candidates_filters_by_persona(session, mini_assets):
-    import_assets(session, mini_assets, default_persona="michael")
+    import_assets(session, mini_assets, default_persona="indie_maker")
     a = session.get(Asset, "asset_001")
     a.persona_id = "anna"
     session.commit()
-    ids = {c.asset.id for c in find_candidates(session, ["typing", "laptop", "coffee"], limit=10, persona_id="michael")}
+    ids = {c.asset.id for c in find_candidates(session, ["typing", "laptop", "coffee"], limit=10, persona_id="indie_maker")}
     assert "asset_001" not in ids and ids
     assert {c.asset.id for c in find_candidates(session, ["typing", "laptop"], limit=10, persona_id="anna")} == {"asset_001"}
 
 
 def test_migrate_assets_moves_files_under_persona_folder(session, mini_assets):
-    import_assets(session, mini_assets, default_persona="michael")
-    moved = migrate_assets_to_persona(session, mini_assets, "michael")
+    import_assets(session, mini_assets, default_persona="indie_maker")
+    moved = migrate_assets_to_persona(session, mini_assets, "indie_maker")
     assert moved == 6
     a = session.get(Asset, "asset_001")
-    assert a.file == "michael/desk/typing_01.mp4" and (mini_assets / a.file).is_file() and a.persona_id == "michael"
+    assert a.file == "indie_maker/desk/typing_01.mp4" and (mini_assets / a.file).is_file() and a.persona_id == "indie_maker"
     assert not (mini_assets / "desk" / "typing_01.mp4").exists()
-    assert migrate_assets_to_persona(session, mini_assets, "michael") == 0  # idempotent
-    rep = import_assets(session, mini_assets, default_persona="michael")  # re-import keeps ids / no duplicates
+    assert migrate_assets_to_persona(session, mini_assets, "indie_maker") == 0  # idempotent
+    rep = import_assets(session, mini_assets, default_persona="indie_maker")  # re-import keeps ids / no duplicates
     assert rep.created == 0 and session.query(Asset).count() == 6
 
 
@@ -85,7 +85,7 @@ def client(mini_assets, tmp_path):
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as s:
         seed_personas_from_configs(s, CONFIGS_DIR)
-        import_assets(s, mini_assets, default_persona="michael")
+        import_assets(s, mini_assets, default_persona="indie_maker")
     app = create_app(
         session_factory=factory,
         jobs=InlineJobRunner(),
@@ -104,7 +104,7 @@ def client(mini_assets, tmp_path):
 
 def test_persona_api_crud(client):
     rows = client.get("/personas").json()
-    assert {r["id"] for r in rows} >= {"michael", "young_professional"}
+    assert {r["id"] for r in rows} >= {"indie_maker", "young_professional"}
     body = {
         **[r for r in rows if r["id"] == "young_professional"][0],
         "id": "anna",
@@ -146,7 +146,7 @@ def test_assets_and_projects_are_persona_scoped(client, tmp_path):
         )
     assert r.status_code == 201 and r.json()["persona_id"] == "anna" and r.json()["file"].startswith("anna/desk/")
     assert len(client.get("/assets?persona=anna").json()) == 1
-    assert len(client.get("/assets?persona=michael").json()) == 6
+    assert len(client.get("/assets?persona=indie_maker").json()) == 6
     assert client.get("/assets/search?q=typing&persona=anna").json() == [] or all(
         c["asset_id"] for c in client.get("/assets/search?q=typing&persona=anna").json()
     )
@@ -154,7 +154,7 @@ def test_assets_and_projects_are_persona_scoped(client, tmp_path):
     r = client.post("/projects", json={"topic": "Real topic here", "template_id": "story_v1", "persona_id": "anna"})
     assert r.status_code == 201 and r.json()["persona_id"] == "anna"
     assert [p["id"] for p in client.get("/projects?persona=anna").json()] == [r.json()["id"]]
-    assert client.get("/projects?persona=michael").json() == []
+    assert client.get("/projects?persona=indie_maker").json() == []
     assert client.post("/projects", json={"topic": "Real topic here", "template_id": "story_v1", "persona_id": "nobody"}).status_code == 404
     # deleting a persona that still owns assets/projects is refused
     assert client.delete("/personas/anna").status_code == 409
@@ -164,10 +164,10 @@ def test_seed_repairs_legacy_row_without_voice(session):
     from app.models import Persona
     from app.personas.repo import get_persona, seed_personas_from_configs
 
-    session.add(Persona(id="michael", name="old", config={"id": "michael", "name": "old", "tone": "x"}))
+    session.add(Persona(id="indie_maker", name="old", config={"id": "indie_maker", "name": "old", "tone": "x"}))
     session.commit()
     assert seed_personas_from_configs(session) >= 1
-    cfg = get_persona(session, "michael")
+    cfg = get_persona(session, "indie_maker")
     assert cfg.voice is not None and cfg.identity is not None
 
 
@@ -176,7 +176,7 @@ def test_unique_persona_id_and_slug(session):
 
     seed_personas_from_configs(session)
     assert slugify("Anna Müller-Schmidt!") == "anna_muller_schmidt"
-    assert unique_persona_id(session, "Michael") == "michael_2"  # michael exists
+    assert unique_persona_id(session, "Indie Maker") == "indie_maker_2"  # indie_maker exists
     assert unique_persona_id(session, "Zoë") == "zoe"
 
 

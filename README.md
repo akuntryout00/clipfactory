@@ -31,21 +31,26 @@ ClipFactory is a self-hosted content pipeline you run on your own machine (Docke
 ## Quick start
 
 ```bash
-cp .env.example .env           # fill the keys you have
-mkdir -p assets/desk assets/phone   # drop your vertical B-roll here (any categories you like)
+cp .env.example .env           # fill the keys you have (OpenAI + ElevenLabs are enough for the content factory)
 make build && make up          # db + api + web → UI http://localhost:3000 · API docs http://localhost:8000/docs
-make import                    # scan ./assets → ffprobe metadata (+ optional assets/broll_database.json seed)
 make doctor                    # keys / ffmpeg / dirs check
-make generate TEMPLATE=story_v1 TOPIC="Why I stopped answering Slack in the morning"
-# ✓ storage/projects/proj_xxx/final.mp4
 ```
 
-The web UI at **http://localhost:3000** covers everything: Projects, Generate, per-project timeline with scene-level controls, B-roll library (upload with AI autocomplete, usable-range trimmer, enrich), Templates editor, System status, and the AI Lab.
+Then, in the web UI at **http://localhost:3000** (first run, ~15 minutes + filming):
+
+1. **Personas → New persona** — three questions (name · place & age · a paragraph about them); AI drafts the full profile, you review and create. Two example personas ship as seeds.
+2. **B-roll** — the persona gets an AI **shot list** (what to film, grouped by folder, default 100 clips). Film a handful, upload them with **Add video** (AI autocomplete fills the metadata) or drop files into `assets/<persona>/<category>/` and run `make import`. The page shows how much of the target is covered.
+3. **Generate** — pick template, topic, length → script, voice, scene plan, B-roll selection, captions and render run in the background; the project page shows every stage, the timeline, and lets you regenerate the script, change clips per scene, render again, approve.
+4. **Batch** (Projects page) — queue N videos with AI-picked topics and follow the progress; **System → Captions** sets fonts and positions for all renders; the **AI Lab** is a separate module for fully generated clips.
+
+CLI equivalent: `make generate TEMPLATE=story_v1 TOPIC="Why I stopped answering Slack in the morning"` → `storage/projects/proj_xxx/final.mp4`.
+
+> The API has **no authentication** — run it on your machine or LAN only (see SECURITY.md).
 
 ## B-roll library
 
 - Put clips in `assets/<persona>/<category>/name.mp4` — every clip belongs to one persona, and only that persona's projects can use it (or upload them one by one in the UI with **Add video**, choosing the persona — AI autocomplete fills description/tags/action/location/shot/mood from sampled frames).
-- `make import` reads technical metadata with ffprobe; semantic metadata comes from `assets/broll_database.json` if present (id/file/description/tags/shot), otherwise heuristics + **Enrich with AI**.
+- `make import` reads technical metadata with ffprobe; semantic metadata comes from an optional `assets/broll_database.json` seed (id/file/description/tags/shot), otherwise heuristics + **Enrich with AI**. Nothing under `assets/` is ever committed (see `assets/README.md`).
 - Clips must be **approved** to be selectable (seeded clips are approved; uploaded clips default to whatever you choose).
 - The scene planner is library-aware: it only plans visuals your footage can cover; the ranker receives the whole catalog when it is small (≤60 clips).
 - Selection score = relevance × quality × freshness (recently used clips are de-prioritised); the start offset is random inside each clip’s usable range so repeats don’t look identical.
@@ -95,3 +100,7 @@ configs/       personas · templates · captions · batch_30.json
 storage/       voices · renders · projects/<id>/ · lab/<id>/ · temp · thumbs · music   (gitignored)
 assets/        your B-roll (+ optional broll_database.json)                           (gitignored)
 ```
+
+## Author
+
+Built by **Feyzili Mikayil** — [@feyzili](https://twitter.com/feyzili). Contributions welcome (see CONTRIBUTING.md).

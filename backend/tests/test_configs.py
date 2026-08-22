@@ -21,9 +21,15 @@ def test_persona_loads_and_validates():
 
 
 def test_persona_voice_id_env_substitution(monkeypatch):
+    from app.config.settings import get_settings
+
     monkeypatch.setenv("ELEVENLABS_VOICE_ID", "abc123")
-    p = load_persona("young_professional")
-    assert p.voice.voice_id == "abc123"
+    get_settings.cache_clear()
+    try:
+        p = load_persona("young_professional")
+        assert p.voice.voice_id == "abc123"
+    finally:
+        get_settings.cache_clear()
 
 
 def test_all_four_templates_load():

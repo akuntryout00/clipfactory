@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     render_threads: int = 0  # 0 = ffmpeg default
 
     # misc
-    default_persona: str = "michael"
+    default_persona: str = "indie_maker"
     log_level: str = "INFO"
 
     @property
