@@ -140,7 +140,13 @@ export function PersonaWizard({ open, onClose, onCreated }: { open: boolean; onC
 
         {step === 3 && draft && (
           <PersonaForm initial={draft} mode="create" submitLabel="Create persona"
-            onDone={p => { onCreated?.(p); onClose() }} onCancel={() => setStep(2)} />
+            onDone={p => {
+              onCreated?.(p); onClose()
+              // plan the B-roll to film for the new persona in the background (PRD: 100 clips per persona)
+              api.generateShotlist(p.id, { target_count: 100, match_existing: false })
+                .then(d => toast.success(`B-roll shot list for ${p.identity?.name ?? p.id} ready — ${d.items_total} shots, ${d.wanted} clips to film (see B-roll)`))
+                .catch(e => toast.warning(`Shot list not generated: ${e.message}`))
+            }} onCancel={() => setStep(2)} />
         )}
 
         {step < 3 && (

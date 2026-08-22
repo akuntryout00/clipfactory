@@ -74,6 +74,7 @@ class ProjectOut(BaseModel):
 
 class AssetPatch(BaseModel):
     persona_id: str | None = None
+    shotlist_item_id: str | None = None
     description: str | None = None
     tags: list[str] | None = None
     action: str | None = None
@@ -90,6 +91,7 @@ class AssetOut(BaseModel):
     id: str
     file: str
     persona_id: str | None = None
+    shotlist_item_id: str | None = None
     description: str | None
     tags: list
     action: str | None

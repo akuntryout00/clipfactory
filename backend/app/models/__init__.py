@@ -66,6 +66,35 @@ class Batch(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class Shotlist(Base):
+    """Per-persona target B-roll list (PRD §52 '100 assets'): what to film so the library covers the persona's topics."""
+
+    __tablename__ = "shotlists"
+    persona_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    target_count: Mapped[int] = mapped_column(Integer, default=100)
+    guidance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class ShotlistItem(Base):
+    __tablename__ = "shotlist_items"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("shot"))
+    persona_id: Mapped[str] = mapped_column(String(64), index=True)
+    order: Mapped[int] = mapped_column(Integer, default=0)
+    category: Mapped[str] = mapped_column(String(64))  # folder under assets/<persona>/
+    title: Mapped[str] = mapped_column(String(128))
+    description: Mapped[str] = mapped_column(Text)
+    shot: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    action: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mood: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    count: Mapped[int] = mapped_column(Integer, default=1)  # how many clips of this shot are wanted
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class AppSetting(Base):
     """Key/value store for UI-editable global settings (e.g. key 'captions')."""
 
@@ -88,6 +117,8 @@ class Asset(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     file: Mapped[str] = mapped_column(String(512), unique=True)
     persona_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # which target shot (persona B-roll shot list) this clip fulfils; None = unassigned
+    shotlist_item_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     action: Mapped[str | None] = mapped_column(String(64), nullable=True)

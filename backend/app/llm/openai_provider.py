@@ -19,6 +19,8 @@ from app.schemas.pipeline import (
     PersonaDraft,
     ScenePlanOutput,
     ScriptOutput,
+    ShotlistMatchOutput,
+    ShotlistOutput,
     TopicIdeasOutput,
     WordTiming,
 )
@@ -102,6 +104,21 @@ class OpenAIProvider:
     ) -> TopicIdeasOutput:
         return self._parse(
             prompts.TOPICS_SYSTEM, prompts.topics_user_prompt(persona, templates, counts, exclude), TopicIdeasOutput, temperature=0.9
+        )
+
+    def generate_shotlist(
+        self, *, persona: PersonaConfig, target_count: int, existing_categories: list[str], guidance: str | None
+    ) -> ShotlistOutput:
+        return self._parse(
+            prompts.SHOTLIST_SYSTEM,
+            prompts.shotlist_user_prompt(persona, target_count, existing_categories, guidance),
+            ShotlistOutput,
+            temperature=0.7,
+        )
+
+    def match_shotlist(self, *, items: list[dict], assets: list[dict]) -> ShotlistMatchOutput:
+        return self._parse(
+            prompts.SHOTLIST_MATCH_SYSTEM, prompts.shotlist_match_user_prompt(items, assets), ShotlistMatchOutput, temperature=0.1
         )
 
     def draft_persona(self, *, name: str, age: int | None, location: str | None, language: str, about: str) -> PersonaDraft:

@@ -1,4 +1,4 @@
-import type { Artifacts, Asset, Batch, Candidate, CaptionOverrides, CaptionStyle, ClipAnalysis, FontInfo, LabEstimate, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
+import type { Artifacts, Asset, Batch, Candidate, Shotlist, CaptionOverrides, CaptionStyle, ClipAnalysis, FontInfo, LabEstimate, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
 
 export const API = import.meta.env.VITE_API_BASE || "/api"
 
@@ -36,6 +36,11 @@ export const api = {
   approve: (id: string) => req<Project>(`/projects/${id}/approve`, { method: "POST" }),
   setProjectCaptions: (id: string, overrides: CaptionOverrides | null) =>
     req<Project>(`/projects/${id}/captions`, { method: "PUT", body: JSON.stringify({ overrides }) }),
+  shotlist: (persona: string) => req<Shotlist>(`/personas/${encodeURIComponent(persona)}/shotlist`),
+  generateShotlist: (persona: string, body: { target_count: number; guidance?: string | null; match_existing?: boolean }) =>
+    req<Shotlist>(`/personas/${encodeURIComponent(persona)}/shotlist/generate`, { method: "POST", body: JSON.stringify(body) }),
+  matchShotlist: (persona: string, body: { asset_ids?: string[] | null; only_unassigned?: boolean } = {}) =>
+    req<Shotlist>(`/personas/${encodeURIComponent(persona)}/shotlist/match`, { method: "POST", body: JSON.stringify(body) }),
   batches: (persona?: string) => req<Batch[]>(`/batches${persona ? `?persona=${encodeURIComponent(persona)}` : ""}`),
   batch: (id: string) => req<Batch>(`/batches/${id}`),
   createBatch: (body: { persona_id: string; count: number; template_ids?: string[] | null; topics?: string[] | null; target_duration?: number | null; name?: string | null }) =>

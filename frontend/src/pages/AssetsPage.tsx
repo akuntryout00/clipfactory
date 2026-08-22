@@ -4,6 +4,7 @@ import { FolderInput, Sparkles, Trash2, Upload, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { api, media } from "@/lib/api"
 import { personaLabel, usePersona } from "@/lib/persona"
+import { ShotlistItemSelect, ShotlistPanel } from "@/components/ShotlistPanel"
 import type { Asset, Persona } from "@/lib/types"
 import { PageHeader } from "@/components/PageHeader"
 import { Button } from "@/components/ui/button"
@@ -23,13 +24,15 @@ export default function AssetsPage() {
   const [cat, setCat] = useState("ALL")
   const [edit, setEdit] = useState<Asset | null>(null)
   const [adding, setAdding] = useState(false)
+  const [shotItem, setShotItem] = useState<string | null>(null)
+  useEffect(() => { setShotItem(null) }, [activeId])
   const imp = useMutation({ mutationFn: api.importAssets, onSuccess: r => { toast.success(`Imported: ${r.created} new, ${r.updated} refreshed`); qc.invalidateQueries({ queryKey: ["assets"] }) }, onError: e => toast.error(e.message) })
   const enrich = useMutation({ mutationFn: api.enrichAssets, onSuccess: r => { toast.success(`Enriched ${r.enriched} clips`); qc.invalidateQueries({ queryKey: ["assets"] }) }, onError: e => toast.error(e.message) })
   // files live under assets/<persona>/<category>/; the category is the second path segment
   const catOf = (a: Asset) => { const parts = a.file.split("/"); return parts.length >= 3 ? parts[1] : parts[0] }
   const cats = useMemo(() => Array.from(new Set((data ?? []).map(catOf))).sort(), [data])
-  const rows = useMemo(() => (data ?? []).filter(a => (cat === "ALL" || catOf(a) === cat) &&
-    (!q || [a.id, a.file, a.description, a.action, a.location, a.mood, ...(a.tags ?? [])].join(" ").toLowerCase().includes(q.toLowerCase()))), [data, q, cat])
+  const rows = useMemo(() => (data ?? []).filter(a => (cat === "ALL" || catOf(a) === cat) && (!shotItem || a.shotlist_item_id === shotItem) &&
+    (!q || [a.id, a.file, a.description, a.action, a.location, a.mood, ...(a.tags ?? [])].join(" ").toLowerCase().includes(q.toLowerCase()))), [data, q, cat, shotItem])
   const approved = (data ?? []).filter(a => a.approved).length
 
   return (
@@ -42,6 +45,7 @@ export default function AssetsPage() {
         </>}>
         <p className="mt-1 text-sm text-muted-foreground"><span className="text-foreground">{personaLabel(active)}</span> · {data?.length ?? 0} clips · {approved} approved · drop new files into <code className="font-mono">assets/{activeId || "<persona>"}/&lt;category&gt;/</code> then Import.</p>
       </PageHeader>
+      <ShotlistPanel personaId={activeId} selectedItem={shotItem} onSelectItem={setShotItem} />
       <div className="flex flex-wrap items-center gap-2 px-8 py-4">
         <Input placeholder="Search id, tags, description…" value={q} onChange={e => setQ(e.target.value)} className="h-8 w-72" />
         <div className="flex gap-1">
@@ -77,7 +81,8 @@ function UploadDialog({ open, onClose, categories, personas, defaultPersona }: {
   const qc = useQueryClient()
   const [file, setFile] = useState<File | null>(null)
   const [personaId, setPersonaId] = useState(defaultPersona)
-  useEffect(() => { setPersonaId(defaultPersona) }, [defaultPersona, open])
+  const [shotItem, setShotItem] = useState<string | null>(null)
+  useEffect(() => { setPersonaId(defaultPersona); setShotItem(null) }, [defaultPersona, open])
   const [category, setCategory] = useState(categories[0] ?? "desk")
   const [newCat, setNewCat] = useState("")
   const [description, setDescription] = useState("")
@@ -105,7 +110,7 @@ function UploadDialog({ open, onClose, categories, personas, defaultPersona }: {
   const up = useMutation({
     mutationFn: () => {
       const fd = new FormData()
-      fd.append("file", file!); fd.append("category", cat); fd.append("persona_id", personaId); fd.append("description", description); fd.append("tags", tags); fd.append("approved", String(approved))
+      fd.append("file", file!); fd.append("category", cat); fd.append("persona_id", personaId); if (shotItem) fd.append("shotlist_item_id", shotItem); fd.append("description", description); fd.append("tags", tags); fd.append("approved", String(approved))
       if (range) { fd.append("usable_start", String(range.s)); fd.append("usable_end", String(range.e)) }
       if (meta.action) fd.append("action", meta.action); if (meta.location) fd.append("location", meta.location)
       if (meta.shot) fd.append("shot", meta.shot); if (meta.mood) fd.append("mood", meta.mood); fd.append("quality_score", String(meta.quality))
@@ -114,7 +119,7 @@ function UploadDialog({ open, onClose, categories, personas, defaultPersona }: {
     onSuccess: a => {
       if (a.enriched) toast.success(`Added ${a.id} · AI tags added (${a.tags.length} tags)`)
       else toast.warning(`Added ${a.id} — AI enrichment skipped${a.enrichError ? `: ${a.enrichError}` : ""}`)
-      qc.invalidateQueries({ queryKey: ["assets"] }); reset(); onClose()
+      qc.invalidateQueries({ queryKey: ["assets"] }); qc.invalidateQueries({ queryKey: ["shotlist"] }); reset(); onClose()
     },
     onError: e => toast.error(e.message),
   })
@@ -156,6 +161,11 @@ function UploadDialog({ open, onClose, categories, personas, defaultPersona }: {
                 {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
               <p className="mt-1 text-[11px] text-muted-foreground">Saved to <code className="font-mono">assets/{personaId || "<persona>"}/{cat || "<category>"}/</code></p>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Target shot this clip fulfils</Label>
+              <ShotlistItemSelect personaId={personaId} value={shotItem} onChange={setShotItem} />
+              <p className="mt-1 text-[11px] text-muted-foreground">Leave empty and AI matches it to the shot list after upload.</p>
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Category (folder)</Label>
@@ -203,7 +213,7 @@ function AssetDialog({ asset, onClose }: { asset: Asset | null; onClose: () => v
   const a = asset ? { ...asset, ...form } : null
   const save = useMutation({
     mutationFn: () => api.patchAsset(asset!.id, form),
-    onSuccess: () => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["assets"] }); setForm({}); onClose() },
+    onSuccess: () => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["assets"] }); qc.invalidateQueries({ queryKey: ["shotlist"] }); setForm({}); onClose() },
     onError: e => toast.error(e.message),
   })
   const del = useMutation({
@@ -236,6 +246,8 @@ function AssetDialog({ asset, onClose }: { asset: Asset | null; onClose: () => v
                 <select value={a.mood ?? ""} onChange={e => set("mood", e.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-2">
                   <option value="">—</option>{["neutral", "focused", "stressed", "relaxed", "happy"].map(s => <option key={s}>{s}</option>)}
                 </select></div>
+              <div className="col-span-2"><Label className="text-xs text-muted-foreground">Target shot this clip fulfils</Label>
+                <ShotlistItemSelect personaId={a.persona_id ?? ""} value={a.shotlist_item_id} onChange={v => set("shotlist_item_id", v)} /></div>
               <div><Label className="text-xs text-muted-foreground">Quality (0–1)</Label><Input type="number" step="0.05" min={0} max={1} value={a.quality_score} onChange={e => set("quality_score", Number(e.target.value))} /></div>
               <div className="flex items-end gap-2"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={a.approved} onChange={e => set("approved", e.target.checked)} className="scrub size-4" /> Approved for use</label></div>
               <div><Label className="text-xs text-muted-foreground">Usable start (s) — drag the left handle or type</Label><Input type="number" step="0.05" min={0} max={a.duration} value={a.usable_start} onChange={e => set("usable_start", Number(e.target.value))} /></div>

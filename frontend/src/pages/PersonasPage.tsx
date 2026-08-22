@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQueries, useQuery } from "@tanstack/react-query"
 import { Check, Pencil, Plus } from "lucide-react"
 import { api } from "@/lib/api"
 import { personaLabel, usePersona } from "@/lib/persona"
@@ -15,6 +15,7 @@ export default function PersonasPage() {
   const { personas, activeId, setActiveId } = usePersona()
   const { data: projects } = useQuery({ queryKey: ["projects"], queryFn: () => api.projects(), staleTime: 30_000 })
   const { data: assets } = useQuery({ queryKey: ["assets"], queryFn: () => api.assets(), staleTime: 30_000 })
+  const coverage = useQueries({ queries: personas.map(p => ({ queryKey: ["shotlist", p.id], queryFn: () => api.shotlist(p.id), staleTime: 30_000 })) })
   const [editing, setEditing] = useState<Persona | null>(null)
   const [creating, setCreating] = useState(false)
   const count = (pid: string) => ({
@@ -51,7 +52,7 @@ export default function PersonasPage() {
                 <div className="font-mono text-[11px] text-muted-foreground">
                   products: {p.products.length ? p.products.map(x => x.name).join(", ") : "none"} ({p.product_mention_policy}) · voice {p.voice.provider}{p.voice.voice_id ? "" : " (env voice id)"} speed {p.voice.speed} · {p.speech_rate_wps} w/s · {p.target_duration}s / max {p.max_duration}s
                 </div>
-                <div className="border-t border-border pt-2 font-mono text-[11px] text-muted-foreground">{c.projects} projects · {c.clips} clips in <span className="text-foreground">assets/{p.id}/</span></div>
+                <div className="border-t border-border pt-2 font-mono text-[11px] text-muted-foreground">{c.projects} projects · {c.clips} clips in <span className="text-foreground">assets/{p.id}/</span>{(() => { const cv = coverage[personas.indexOf(p)]?.data; return cv && cv.items_total > 0 ? <> · B-roll target <span className="text-foreground">{cv.percent}%</span> ({cv.filled}/{cv.wanted})</> : <> · no B-roll target yet</> })()}</div>
               </CardContent>
             </Card>
           )

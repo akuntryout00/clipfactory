@@ -14,6 +14,10 @@ from app.schemas.pipeline import (
     ScenePlanOutput,
     ScriptOutput,
     ScriptSection,
+    ShotlistAssignment,
+    ShotlistItemOut,
+    ShotlistMatchOutput,
+    ShotlistOutput,
     TopicIdea,
     TopicIdeasOutput,
     WordTiming,
@@ -176,6 +180,49 @@ class FakeLLM:
             for i in range(counts.get(t.id, 0)):
                 items.append(TopicIdea(topic=f"{t.id} idea {i + 1} about {persona.topics[i % len(persona.topics)]}", template_id=t.id))
         return TopicIdeasOutput(items=items)
+
+    def generate_shotlist(
+        self, *, persona: PersonaConfig, target_count: int, existing_categories: list[str], guidance: str | None
+    ) -> ShotlistOutput:
+        base = [
+            ("desk", "Typing on laptop, close-up", "typing_laptop", "office", "close"),
+            ("phone", "Scrolling phone at a table", "scrolling_phone", "cafe", "close"),
+            ("walking", "Walking down the street, medium", "walking_street", "street", "medium"),
+            ("reaction", "Looking up from the screen and smiling", "reaction_smile", "cafe", "medium"),
+        ]
+        n = len(base)
+        per, extra = divmod(max(1, target_count), n)
+        items = [
+            ShotlistItemOut(
+                category=c,
+                title=t,
+                description=f"Film: {t}. {guidance or ''}".strip(),
+                shot=sh,
+                action=a,
+                location=loc,
+                mood="neutral",
+                tags=[c, a.split("_")[0], "broll"],
+                count=per + (1 if i < extra else 0),
+            )
+            for i, (c, t, a, loc, sh) in enumerate(base)
+        ]
+        return ShotlistOutput(items=[it for it in items if it.count > 0])
+
+    def match_shotlist(self, *, items: list[dict], assets: list[dict]) -> ShotlistMatchOutput:
+        out = []
+        for a in assets:
+            idx = next((i for i, it in enumerate(items) if it.get("action") and it["action"] == a.get("action")), None)
+            if idx is None:
+                idx = next(
+                    (
+                        i
+                        for i, it in enumerate(items)
+                        if it.get("category") and str(a.get("file", "")).split("/")[-2:-1] == [it["category"]]
+                    ),
+                    None,
+                )
+            out.append(ShotlistAssignment(asset_id=a["asset_id"], item_index=idx))
+        return ShotlistMatchOutput(assignments=out)
 
     def draft_persona(self, *, name: str, age: int | None, location: str | None, language: str, about: str) -> PersonaDraft:
         role = about.strip().split(".")[0][:40] or "Creator"

@@ -13,6 +13,8 @@ from app.schemas.pipeline import (
     PersonaDraft,
     ScenePlanOutput,
     ScriptOutput,
+    ShotlistMatchOutput,
+    ShotlistOutput,
     TopicIdeasOutput,
     WordTiming,
 )
@@ -50,6 +52,12 @@ class LLMProvider(Protocol):
     def generate_topics(
         self, *, persona: PersonaConfig, templates: list[TemplateConfig], counts: dict[str, int], exclude: list[str]
     ) -> TopicIdeasOutput: ...
+
+    def generate_shotlist(
+        self, *, persona: PersonaConfig, target_count: int, existing_categories: list[str], guidance: str | None
+    ) -> ShotlistOutput: ...
+
+    def match_shotlist(self, *, items: list[dict], assets: list[dict]) -> ShotlistMatchOutput: ...
 
 
 def get_llm(provider: str | None = None) -> LLMProvider:

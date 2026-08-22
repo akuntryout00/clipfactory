@@ -231,3 +231,45 @@ def topics_user_prompt(persona: PersonaConfig, templates: list[TemplateConfig], 
         f"ALREADY USED TOPICS (do not repeat or paraphrase):\n{ex}\n\n"
         f"Generate exactly {sum(counts.values())} topics in the persona's video language ({persona.language})."
     )
+
+
+SHOTLIST_SYSTEM = (
+    "You plan a B-roll library for a short-form creator persona (vertical 9:16 videos, voice-over with dynamic captions, cut from the "
+    "creator's own footage). Produce a concrete shot list the creator can film in a few sessions: everyday, easy-to-shoot shots "
+    "(laptop, phone, notebook, coffee, walking, commuting, cafe, desk, reactions, hands, tools they use, places they mention) that "
+    "illustrate the persona's content pillars and typical script moments (hook, problem, realization, payoff, list items). Mix close, "
+    "medium and wide shots; mix locations; include a few reaction/face shots and a few 'abstract' shots (timers, notifications, "
+    "crossing things out). Avoid anything that needs actors, locations or props the persona does not plausibly have. Use 6-10 "
+    "categories as lowercase folder names. `count` per item = how many distinct clips of that shot to film; the counts must add up to "
+    "the requested total. Output JSON only."
+)
+
+
+def shotlist_user_prompt(persona: PersonaConfig, target_count: int, existing_categories: list[str], guidance: str | None) -> str:
+    cats = ", ".join(existing_categories) if existing_categories else "(none yet)"
+    return (
+        f"{persona_block(persona)}\n\nTOTAL CLIPS TO PLAN: {target_count} (sum of all `count` values must equal this)\n"
+        f"EXISTING LIBRARY FOLDERS (reuse these names where they fit): {cats}\n"
+        f"EXTRA GUIDANCE FROM THE CREATOR: {guidance or '(none)'}\n"
+        "Write the shot list now in English (descriptions are for the creator; keep them practical)."
+    )
+
+
+SHOTLIST_MATCH_SYSTEM = (
+    "You match B-roll clips (described by text metadata) to a target shot list. For each clip pick the single best matching shot "
+    "item index, or null when no item describes this clip well (different action or place). Be strict: a match means the clip could "
+    "be used where that shot is needed. Output JSON only."
+)
+
+
+def shotlist_match_user_prompt(items: list[dict], assets: list[dict]) -> str:
+    il = "\n".join(
+        f"[{i}] {it['category']}/{it['action']} — {it['title']}: {it['description']} (tags: {', '.join(it.get('tags') or [])})"
+        for i, it in enumerate(items)
+    )
+    al = "\n".join(
+        f"- {a['asset_id']} ({a['file']}): {a.get('description') or ''} | action={a.get('action')} location={a.get('location')} "
+        f"shot={a.get('shot')} mood={a.get('mood')} tags={', '.join(a.get('tags') or [])}"
+        for a in assets
+    )
+    return f"SHOT LIST:\n{il}\n\nCLIPS:\n{al}\n\nReturn one assignment per clip."

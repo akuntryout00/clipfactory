@@ -199,6 +199,13 @@ def persona_delete(persona_id: str, db: Session = Depends(get_db)):
     n_projects = db.execute(select(func.count()).select_from(VideoProject).where(VideoProject.persona_id == persona_id)).scalar_one()
     if n_assets or n_projects:
         raise HTTPException(409, f"persona still owns {n_assets} clips and {n_projects} projects — move or delete them first")
+    from sqlalchemy import delete as sa_delete
+
+    from app.models import Shotlist, ShotlistItem
+
+    db.execute(sa_delete(ShotlistItem).where(ShotlistItem.persona_id == persona_id))
+    if (sl := db.get(Shotlist, persona_id)) is not None:
+        db.delete(sl)
     delete_persona(db, persona_id)
     return Response(status_code=204)
 

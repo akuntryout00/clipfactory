@@ -217,3 +217,28 @@ class TopicIdea(BaseModel):
 
 class TopicIdeasOutput(BaseModel):
     items: list[TopicIdea]
+
+
+class ShotlistItemOut(BaseModel):
+    category: str = Field(description="lowercase folder name, e.g. desk, phone, walking, cafe, reaction, product, networking, sport, home")
+    title: str = Field(description="short label, <= 60 chars, e.g. 'Typing on laptop, close-up'")
+    description: str = Field(description="what to film: framing, action, place, light — one or two sentences the creator can follow")
+    shot: str = Field(description="close | medium | wide")
+    action: str = Field(description="snake_case main action, e.g. typing_laptop, scrolling_phone, walking_street")
+    location: str = Field(description="cafe | office | street | home | store | gym | park | other")
+    mood: str = Field(description="neutral | focused | stressed | relaxed | happy | energetic")
+    tags: list[str] = Field(description="4-8 lowercase single-word search tags")
+    count: int = Field(description="how many distinct clips of this shot to film (1-4)")
+
+
+class ShotlistOutput(BaseModel):
+    items: list[ShotlistItemOut]
+
+
+class ShotlistAssignment(BaseModel):
+    asset_id: str
+    item_index: int | None = Field(description="index into the given shot list, or null if no item matches well")
+
+
+class ShotlistMatchOutput(BaseModel):
+    assignments: list[ShotlistAssignment]

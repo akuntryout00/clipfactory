@@ -53,7 +53,17 @@ export interface Asset {
   id: string; file: string; description: string | null; tags: string[]; action: string | null; location: string | null
   shot: string | null; mood: string | null; duration: number; width: number | null; height: number | null; fps: number | null
   orientation: string | null; usable_start: number; usable_end: number; quality_score: number; usage_count: number
-  last_used_at: string | null; approved: boolean; persona_id: string | null
+  last_used_at: string | null; approved: boolean; persona_id: string | null; shotlist_item_id?: string | null
+}
+export interface ShotlistItem {
+  id: string; order: number; category: string; title: string; description: string; shot: string | null; action: string | null
+  location: string | null; mood: string | null; tags: string[]; count: number; filled: number; done: boolean
+  assets: { id: string; file: string; approved: boolean }[]
+}
+export interface Shotlist {
+  persona_id: string; target_count: number | null; generated_at: string | null; guidance: string | null; model: string | null
+  wanted: number; filled: number; percent: number; items_total: number; items_done: number; library_count: number
+  unassigned_count: number; unassigned_asset_ids: string[]; items: ShotlistItem[]; matched?: number
 }
 export interface Candidate {
   asset_id: string; description: string | null; tags: string[]; action: string | null; location: string | null

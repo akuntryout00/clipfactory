@@ -16,7 +16,8 @@ from app.api.schemas import AssetOut, AssetPatch
 from app.assets.importer import VIDEO_EXT, import_assets, register_asset_file
 from app.assets.selector import extract_query_tags, find_candidates
 from app.config.settings import get_settings
-from app.models import Asset
+from app.llm.base import get_llm
+from app.models import Asset, ShotlistItem
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -49,7 +50,6 @@ def assets_import(request: Request, db: Session = Depends(get_db), approve_unsee
 @router.post("/assets/enrich")
 def assets_enrich(request: Request, db: Session = Depends(get_db), overwrite: bool = False):
     from app.assets.enrich import enrich_library
-    from app.llm.base import get_llm
 
     llm = request.app.state.service_kwargs.get("llm") or get_llm()
     return {"enriched": enrich_library(db, llm, overwrite=overwrite)}
@@ -65,7 +65,6 @@ async def asset_analyze(request: Request, file: UploadFile = File(...), db: Sess
 
     from app.assets.frames import extract_frames
     from app.assets.metadata import probe_video
-    from app.llm.base import get_llm
 
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in VIDEO_EXT:
@@ -118,6 +117,7 @@ async def asset_upload(
     mood: str | None = Form(None),
     quality_score: float | None = Form(None),
     persona_id: str | None = Form(None),
+    shotlist_item_id: str | None = Form(None),
     enrich: bool = True,
     db: Session = Depends(get_db),
 ):
@@ -184,6 +184,19 @@ async def asset_upload(
             log.warning("auto-enrich failed for %s: %s", asset.id, exc)
             response.headers["X-Enrich-Error"] = str(exc)[:200]
     response.headers["X-Enriched"] = "true" if enriched else "false"
+    # shot-list bookkeeping: explicit item from the form, otherwise let the matcher try (best effort)
+    try:
+        from app.assets.shotlist import match_assets
+
+        if shotlist_item_id:
+            asset.shotlist_item_id = shotlist_item_id
+            db.commit()
+        elif pid:
+            llm = request.app.state.service_kwargs.get("llm") or get_llm()
+            match_assets(db, llm, pid, [asset.id])
+        db.refresh(asset)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("shotlist match failed for %s: %s", asset.id, exc)
     return asset
 
 
@@ -234,6 +247,10 @@ def asset_patch(asset_id: str, patch: AssetPatch, db: Session = Depends(get_db))
     if a is None:
         raise HTTPException(404, "asset not found")
     for k, v in patch.model_dump(exclude_unset=True).items():
+        if k == "shotlist_item_id":
+            v = v or None
+            if v and db.get(ShotlistItem, v) is None:
+                raise HTTPException(422, "unknown shot-list item")
         setattr(a, k, v)
     if a.usable_end and a.usable_end > a.duration:
         a.usable_end = a.duration

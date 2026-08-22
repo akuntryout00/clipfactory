@@ -80,3 +80,7 @@ SQLAlchemy 2.0, Postgres in compose, SQLite in tests. `db.init_db()` creates tab
 ## Caption settings
 
 `captions/settings.py`: `CaptionOverrides` (font, size, bold, vertical anchor for captions and overlays) stored globally in the `app_settings` table (key `captions`, API `GET/PUT /settings/captions`) and per project in `video_projects.caption_overrides` (`PUT /projects/{id}/captions`). `ProjectService.caption_style_for()` resolves template caption style → global → project before caption generation and rendering; `render_video(..., fonts_dir=)` passes `fonts/` to libass as `fontsdir`. `GET /fonts` lists `fonts/*.ttf|otf` (family read with `fc-scan`) plus fontconfig system families; `POST /fonts/upload` adds a file.
+
+## Shot list & batches
+
+`assets/shotlist.py`: `Shotlist`/`ShotlistItem` per persona (AI `generate_shotlist`, counts scaled to the target), `coverage()` (filled = min(approved assigned clips, count) per item), `match_assets()` (LLM `match_shotlist` in chunks of 40 with an action/category/tag heuristic fallback) — used on upload, on demand and after regeneration. `projects/batch.py`: `Batch` + `VideoProject.batch_id`; topics from `LLM.generate_topics` (PRD §51 template mix via `split_counts`) or user list; projects created up-front, generated sequentially in one JobRunner job; cancel flag checked between items; resume re-runs DRAFT/FAILED.
