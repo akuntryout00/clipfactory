@@ -58,3 +58,6 @@ Thumbs.db
 *.log
 pgdata/
 prd.md
+
+# vite dep cache
+.vite/

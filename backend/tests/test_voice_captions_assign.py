@@ -184,8 +184,8 @@ def test_write_ass_keeps_emphasis_tag_and_wraps_plain_text(tmp_path: Path):
     line = [l for l in out.read_text().splitlines() if l.startswith("Dialogue:")][0]
     assert "{\\1c&H0000E5FF}productivity{\\1c&H00FFFFFF}" in line
     assert "(\\1c" not in line
-    # wrapping decided on plain text: "3 productivity" (14 chars) fits on line 1 at 16 chars/line
-    assert (
-        line.endswith("}productivity{\\1c&H00FFFFFF}\\Nhabits that")
-        or "3 {\\1c&H0000E5FF}productivity{\\1c&H00FFFFFF}\\Nhabits that" in line
-    )
+    # wrapping is decided on the plain words (measured with the real font when available, else 16 chars/line): the break is
+    # never placed inside the colour tags, and the chunk is split over two lines
+    text = line.split(",,", 1)[1]
+    assert "\\N" in text and text.count("\\N") == 1
+    assert text.replace("{\\1c&H0000E5FF}", "").replace("{\\1c&H00FFFFFF}", "").split("}")[-1] in ("3 productivity\\Nhabits that", "3 productivity habits\\Nthat")
