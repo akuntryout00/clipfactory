@@ -194,3 +194,20 @@ def analyze_user_prompt(filename: str, duration: float, categories: list[str], n
         f"Existing library categories (folders): {cats}. Pick the best one as suggested_category, or propose a short new one.\n"
         "Fill every field."
     )
+
+
+PERSONA_DRAFT_SYSTEM = (
+    "You design creator personas for a short-form video factory (vertical videos with voice-over and B-roll). From a few facts "
+    "about a person — name, age, location, language and a free-text description of what they do and like — fill in a complete, "
+    "coherent persona profile. Stay faithful to the facts given; infer plausible, specific details where needed but never invent "
+    "employers, products or achievements. Keep every text field in the requested language. Topics must be things this person can "
+    "talk about with first-hand credibility. 'avoid' lists concrete script anti-patterns for this character (e.g. 'corporate "
+    "buzzwords', 'fake statistics', 'talking down to the viewer'). Output JSON only."
+)
+
+
+def persona_draft_user_prompt(*, name: str, age: int | None, location: str | None, language: str, about: str) -> str:
+    return (
+        f"Name: {name}\nAge: {age if age is not None else 'unknown'}\nLocation: {location or 'unknown'}\n"
+        f"Language of the videos: {language}\n\nAbout this person (free text from the user):\n{about.strip()}\n"
+    )

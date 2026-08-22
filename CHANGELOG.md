@@ -4,6 +4,7 @@ All notable changes are documented here. Format: Keep a Changelog · SemVer.
 
 ## [Unreleased]
 ### Added
+- Persona wizard: New persona = name → country/city/age (language auto from country) → free-text description → AI drafts the full profile (`POST /personas/draft`) → review & create; id and list name are system-generated.
 - Multi-persona: personas stored in the database with a UI editor (Personas page), per-persona projects and B-roll (`assets/<persona>/<category>/`), persona switcher in the sidebar, persona choice on Generate and on B-roll upload, `?persona=` API filters, `clipfactory personas list|seed` and `clipfactory assets migrate-personas --to <id>`.
 ### Changed
 - `configs/personas/*.json` are now seeds only (inserted when missing; legacy rows without a voice block are repaired from the seed).

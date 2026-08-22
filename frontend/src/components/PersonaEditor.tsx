@@ -9,7 +9,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { cn } from "@/lib/utils"
 import { useConfirm } from "@/components/ConfirmDialog"
 
 export const EMPTY_PERSONA: Persona = {
@@ -33,29 +32,46 @@ const CLOSINGS: { v: ClosingStyle; l: string }[] = [
 ]
 
 const splitLines = (s: string) => s.split(/\n/).map(x => x.trim()).filter(Boolean)
-const slug = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40)
 
-/** Create / edit a persona (stored in the database via /personas). */
-export function PersonaEditor({ persona, onClose }: { persona: Persona | null | "new"; onClose: () => void }) {
+/** Edit an existing persona in a dialog (stored in the database via /personas). New personas are created by the PersonaWizard. */
+export function PersonaEditor({ persona, onClose }: { persona: Persona | null; onClose: () => void }) {
+  return (
+    <Dialog open={persona !== null} onOpenChange={o => { if (!o) onClose() }}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle className="font-heading">Edit persona <span className="font-mono text-sm font-normal text-muted-foreground">· {persona?.id}</span></DialogTitle>
+          <DialogDescription>Who speaks in the videos. This persona owns its own projects and B-roll library (<code className="font-mono">assets/{persona?.id}/…</code>).</DialogDescription>
+        </DialogHeader>
+        {persona && <PersonaForm initial={persona} mode="edit" onDone={onClose} onCancel={onClose} />}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/**
+ * The persona fields + save/delete actions. `mode="create"` posts a new persona (id/display name come from the draft),
+ * `mode="edit"` updates an existing one. Id and display name are system-managed and not shown.
+ */
+export function PersonaForm({ initial, mode, onDone, onCancel, submitLabel }: {
+  initial: Persona; mode: "create" | "edit"; onDone: (p: Persona) => void; onCancel: () => void; submitLabel?: string
+}) {
   const qc = useQueryClient()
   const confirm = useConfirm()
-  const isNew = persona === "new"
-  const [p, setP] = useState<Persona>(EMPTY_PERSONA)
-  const [idTouched, setIdTouched] = useState(false)
+  const isNew = mode === "create"
+  const [p, setP] = useState<Persona>(initial)
   // list fields are edited as free text (one per line) and parsed on save
   const [lists, setLists] = useState({ topics: "", tone: "", avoid: "", tools: "" })
   useEffect(() => {
-    const src = persona && persona !== "new" ? structuredClone(persona) : structuredClone(EMPTY_PERSONA)
+    const src = structuredClone(initial)
     if (!src.identity) src.identity = { ...EMPTY_PERSONA.identity! }
     setP(src)
-    setIdTouched(false)
     setLists({ topics: src.topics.join("\n"), tone: src.tone.join("\n"), avoid: src.avoid.join("\n"), tools: src.tools.join("\n") })
-  }, [persona])
+  }, [initial])
 
   const built = (): Persona => ({
     ...p,
     id: p.id.trim(),
-    name: p.name.trim(),
+    name: (p.name.trim() || p.identity?.name?.trim() || p.id).slice(0, 128),
     topics: splitLines(lists.topics), tone: splitLines(lists.tone), avoid: splitLines(lists.avoid), tools: splitLines(lists.tools),
     identity: p.identity?.name?.trim() ? { ...p.identity, name: p.identity.name.trim(), age: p.identity.age || null } : null,
     products: p.products.filter(x => x.name.trim()),
@@ -63,17 +79,17 @@ export function PersonaEditor({ persona, onClose }: { persona: Persona | null | 
   })
   const idOk = /^[a-z0-9][a-z0-9_-]{1,40}$/.test(p.id)
   const durOk = p.target_duration > 0 && p.target_duration <= p.max_duration
-  const valid = idOk && p.name.trim().length > 0 && p.audience.trim().length > 0 && splitLines(lists.topics).length > 0 && splitLines(lists.tone).length > 0 && durOk && p.speech_rate_wps > 0
+  const valid = idOk && (p.identity?.name?.trim().length ?? 0) > 0 && p.audience.trim().length > 0 && splitLines(lists.topics).length > 0 && splitLines(lists.tone).length > 0 && durOk && p.speech_rate_wps > 0
 
   const invalidate = () => { qc.invalidateQueries({ queryKey: ["personas"] }) }
   const save = useMutation({
     mutationFn: () => (isNew ? api.createPersona(built()) : api.updatePersona(built())),
-    onSuccess: () => { toast.success(isNew ? `Persona ${p.id} created` : `Persona ${p.id} saved`); invalidate(); onClose() },
+    onSuccess: saved => { toast.success(isNew ? `Persona ${saved.identity?.name ?? saved.id} created` : `Persona ${p.id} saved`); invalidate(); onDone(saved) },
     onError: e => toast.error(e.message),
   })
   const del = useMutation({
     mutationFn: () => api.deletePersona(p.id),
-    onSuccess: () => { toast.success(`Persona ${p.id} deleted`); invalidate(); onClose() },
+    onSuccess: () => { toast.success(`Persona ${p.id} deleted`); invalidate(); onCancel() },
     onError: e => toast.error(e.message),
   })
   const setId = (id: Partial<NonNullable<Persona["identity"]>>) => setP(x => ({ ...x, identity: { ...(x.identity ?? EMPTY_PERSONA.identity!), ...id } }))
@@ -81,27 +97,13 @@ export function PersonaEditor({ persona, onClose }: { persona: Persona | null | 
   const setProduct = (i: number, patch: Partial<Persona["products"][number]>) => setP(x => ({ ...x, products: x.products.map((pr, j) => (j === i ? { ...pr, ...patch } : pr)) }))
 
   return (
-    <Dialog open={persona !== null} onOpenChange={o => { if (!o) onClose() }}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
-        <DialogHeader>
-          <DialogTitle className="font-heading">{isNew ? "New persona" : `Edit persona · ${p.id}`}</DialogTitle>
-          <DialogDescription>Who speaks in the videos. Each persona owns its own projects and B-roll library (<code className="font-mono">assets/{p.id || "<id>"}/…</code>).</DialogDescription>
-        </DialogHeader>
         <form className="space-y-6" onSubmit={e => { e.preventDefault(); if (valid) save.mutate() }}>
           <Section title="Identity">
-            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_120px]">
-              <Field label="Display name" hint="shown in lists">
-                <Input value={p.name} onChange={e => { const name = e.target.value; setP(x => ({ ...x, name, id: isNew && !idTouched ? slug(name) : x.id })) }} placeholder="Michael — Indie Maker" />
-              </Field>
-              <Field label="Id" hint={isNew ? "lowercase, a-z 0-9 _ -; cannot be renamed later" : "fixed"}>
-                <Input value={p.id} disabled={!isNew} onChange={e => { setIdTouched(true); setP(x => ({ ...x, id: e.target.value })) }} className={cn("font-mono", !idOk && isNew && p.id && "border-fail")} placeholder="anna_designer" />
-              </Field>
-              <Field label="Language"><Input value={p.language} onChange={e => setP(x => ({ ...x, language: e.target.value }))} className="font-mono" /></Field>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-[1fr_90px_1fr]">
-              <Field label="Character name" hint="how the voice refers to itself"><Input value={p.identity?.name ?? ""} onChange={e => setId({ name: e.target.value })} placeholder="Michael" /></Field>
+            <div className="grid gap-3 sm:grid-cols-[1fr_90px_1fr_120px]">
+              <Field label="Name" hint={`id ${p.id} · set automatically`}><Input value={p.identity?.name ?? ""} onChange={e => setId({ name: e.target.value })} placeholder="Michael" /></Field>
               <Field label="Age"><Input type="number" min={0} value={p.identity?.age ?? ""} onChange={e => setId({ age: e.target.value === "" ? null : Number(e.target.value) })} /></Field>
               <Field label="Location"><Input value={p.identity?.location ?? ""} onChange={e => setId({ location: e.target.value })} placeholder="US" /></Field>
+              <Field label="Language"><Input value={p.language} onChange={e => setP(x => ({ ...x, language: e.target.value }))} className="font-mono" /></Field>
             </div>
             <Field label="Background / career" hint="fed to the script model as who is talking">
               <Textarea rows={2} value={p.identity?.background ?? ""} onChange={e => setId({ background: e.target.value })} placeholder="Ex-software engineer and CTO, 3 years indie hacker, 2 years solopreneur." />
@@ -176,13 +178,11 @@ export function PersonaEditor({ persona, onClose }: { persona: Persona | null | 
               </Button>
             ) : <span />}
             <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-              <Button type="submit" disabled={!valid || save.isPending}>{save.isPending ? "Saving…" : isNew ? "Create persona" : "Save changes"}</Button>
+              <Button type="button" variant="outline" onClick={onCancel}>{isNew ? "Back" : "Cancel"}</Button>
+              <Button type="submit" disabled={!valid || save.isPending}>{save.isPending ? "Saving…" : submitLabel ?? (isNew ? "Create persona" : "Save changes")}</Button>
             </div>
           </div>
         </form>
-      </DialogContent>
-    </Dialog>
   )
 }
 

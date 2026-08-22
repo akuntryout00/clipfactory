@@ -193,3 +193,18 @@ class ClipAnalysis(BaseModel):
     )
     quality_score: float = Field(default=0.8, ge=0, le=1, description="0-1 technical/visual quality estimate (steady, lit, usable)")
     notes: str | None = Field(default=None, description="Anything an editor should know (shaky part, faces, text on screen)")
+
+
+class PersonaDraft(BaseModel):
+    """What the LLM fills in from a few facts about a new persona (wizard step 4)."""
+
+    display_name: str = Field(description="Short list label: '<Name> — <role in 2-4 words>', e.g. 'Anna — UX Designer'")
+    background: str = Field(description="1-2 sentences: career, what they do now, how long, hobbies — in the same language as the input")
+    speaks_as: str = Field(description="Narration stance, e.g. \"first person ('I'), talking to one viewer ('you')\"")
+    audience: str = Field(description="One sentence: who watches these videos and why")
+    topics: list[str] = Field(description="4-6 content pillars this persona can talk about credibly, lowercase short phrases")
+    tone: list[str] = Field(description="4-6 tone words/phrases matching the character")
+    avoid: list[str] = Field(description="4-8 things the scripts must never do (vocabulary, hype, claims) for this character")
+    tools: list[str] = Field(description="3-6 tools/apps/brands the persona really uses, 'Name (what for)' form; [] if unknown")
+    closing_style: str = Field(description="punchline_no_cta | question | soft_follow")
+    product_mention_policy: str = Field(description="never | occasional_soft | problem_solution_only")

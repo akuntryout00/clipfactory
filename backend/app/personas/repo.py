@@ -81,3 +81,50 @@ def persona_or_config(session: Session, persona_id: str, configs_dir: Path | Non
         from app.config.loaders import load_persona
 
         return load_persona(persona_id, configs_dir)  # raises FileNotFoundError
+
+
+def slugify(name: str) -> str:
+    import re
+    import unicodedata
+
+    base = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    base = re.sub(r"[^a-z0-9]+", "_", base.lower()).strip("_")[:40]
+    return base or "persona"
+
+
+def unique_persona_id(session: Session, name: str) -> str:
+    base = slugify(name)
+    if len(base) < 2:
+        base = f"{base}_p"
+    pid, n = base, 2
+    while session.get(Persona, pid) is not None:
+        pid = f"{base}_{n}"
+        n += 1
+    return pid
+
+
+def persona_from_draft(session: Session, *, name: str, age: int | None, location: str | None, language: str, draft) -> PersonaConfig:
+    """Turn the wizard facts + LLM draft into a full, valid PersonaConfig (not saved)."""
+    from app.schemas.configs import PersonaIdentity, VoiceConfig
+
+    closing = draft.closing_style if draft.closing_style in ("punchline_no_cta", "question", "soft_follow") else "punchline_no_cta"
+    policy = (
+        draft.product_mention_policy if draft.product_mention_policy in ("never", "occasional_soft", "problem_solution_only") else "never"
+    )
+    return PersonaConfig(
+        id=unique_persona_id(session, name),
+        name=(draft.display_name or name).strip()[:128],
+        language=language or "en-US",
+        audience=draft.audience,
+        topics=[t for t in draft.topics if t.strip()][:8] or ["daily life"],
+        tone=[t for t in draft.tone if t.strip()][:8] or ["friendly"],
+        avoid=[t for t in draft.avoid if t.strip()][:10],
+        identity=PersonaIdentity(
+            name=name.strip(), age=age, location=location or None, background=draft.background, speaks_as=draft.speaks_as
+        ),
+        tools=[t for t in draft.tools if t.strip()][:8],
+        products=[],
+        product_mention_policy=policy,
+        closing_style=closing,
+        voice=VoiceConfig(voice_id=""),
+    )

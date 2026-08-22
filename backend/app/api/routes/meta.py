@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -110,6 +111,29 @@ def personas(request: Request, db: Session = Depends(get_db)):
         seed_personas_from_configs(db, cfg_dir(request))
         rows = list_personas(db)
     return [_mask(p) for p in rows]
+
+
+class PersonaDraftIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    age: int | None = Field(default=None, ge=5, le=120)
+    location: str | None = Field(default=None, max_length=120)
+    language: str = Field(default="en-US", max_length=16)
+    about: str = Field(min_length=10, max_length=4000)
+
+
+@router.post("/personas/draft")
+def persona_draft(body: PersonaDraftIn, request: Request, db: Session = Depends(get_db)):
+    """Wizard: a few facts + free text → complete persona proposal (not saved; POST /personas to create it)."""
+    from app.llm.base import get_llm
+    from app.personas.repo import persona_from_draft
+
+    llm = request.app.state.service_kwargs.get("llm") or get_llm()
+    try:
+        draft = llm.draft_persona(name=body.name, age=body.age, location=body.location, language=body.language, about=body.about)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"AI draft failed: {exc}")
+    cfg = persona_from_draft(db, name=body.name, age=body.age, location=body.location, language=body.language, draft=draft)
+    return _mask(cfg)
 
 
 @router.get("/personas/{persona_id}")

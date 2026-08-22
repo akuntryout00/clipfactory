@@ -6,6 +6,7 @@ import { personaLabel, usePersona } from "@/lib/persona"
 import type { Persona } from "@/lib/types"
 import { PageHeader } from "@/components/PageHeader"
 import { PersonaEditor } from "@/components/PersonaEditor"
+import { PersonaWizard } from "@/components/PersonaWizard"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
@@ -14,7 +15,8 @@ export default function PersonasPage() {
   const { personas, activeId, setActiveId } = usePersona()
   const { data: projects } = useQuery({ queryKey: ["projects"], queryFn: () => api.projects(), staleTime: 30_000 })
   const { data: assets } = useQuery({ queryKey: ["assets"], queryFn: () => api.assets(), staleTime: 30_000 })
-  const [editing, setEditing] = useState<Persona | "new" | null>(null)
+  const [editing, setEditing] = useState<Persona | null>(null)
+  const [creating, setCreating] = useState(false)
   const count = (pid: string) => ({
     projects: (projects ?? []).filter(p => p.persona_id === pid).length,
     clips: (assets ?? []).filter(a => a.persona_id === pid).length,
@@ -22,7 +24,7 @@ export default function PersonasPage() {
   return (
     <div>
       <PageHeader eyebrow="Who is talking" title="Personas"
-        actions={<Button onClick={() => setEditing("new")}><Plus className="size-4" /> New persona</Button>}>
+        actions={<Button onClick={() => setCreating(true)}><Plus className="size-4" /> New persona</Button>}>
         <p className="mt-1 text-sm text-muted-foreground">Each persona has its own character, voice, projects and B-roll library. The active persona (sidebar) scopes Projects, Generate and B-roll.</p>
       </PageHeader>
       <div className="grid gap-4 px-8 py-6 md:grid-cols-2">
@@ -57,6 +59,7 @@ export default function PersonasPage() {
         {personas.length === 0 && <p className="text-sm text-muted-foreground">No personas yet — create one to start generating.</p>}
       </div>
       <PersonaEditor persona={editing} onClose={() => setEditing(null)} />
+      <PersonaWizard open={creating} onClose={() => setCreating(false)} onCreated={p => setActiveId(p.id)} />
     </div>
   )
 }

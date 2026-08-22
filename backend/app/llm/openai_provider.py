@@ -16,6 +16,7 @@ from app.schemas.pipeline import (
     AssetRankOutput,
     ClipAnalysis,
     NormalizedScene,
+    PersonaDraft,
     ScenePlanOutput,
     ScriptOutput,
     WordTiming,
@@ -94,6 +95,14 @@ class OpenAIProvider:
 
     def rank_assets(self, *, topic: str, scenes: list[NormalizedScene], candidates: dict[int, list[dict]]) -> AssetRankOutput:
         return self._parse(prompts.RANK_SYSTEM, prompts.rank_user_prompt(topic, scenes, candidates), AssetRankOutput, temperature=0.3)
+
+    def draft_persona(self, *, name: str, age: int | None, location: str | None, language: str, about: str) -> PersonaDraft:
+        return self._parse(
+            prompts.PERSONA_DRAFT_SYSTEM,
+            prompts.persona_draft_user_prompt(name=name, age=age, location=location, language=language, about=about),
+            PersonaDraft,
+            temperature=0.6,
+        )
 
     def analyze_clip(self, *, frames: list[bytes], filename: str, duration: float, categories: list[str]) -> ClipAnalysis:
         import base64

@@ -169,3 +169,40 @@ def test_seed_repairs_legacy_row_without_voice(session):
     assert seed_personas_from_configs(session) >= 1
     cfg = get_persona(session, "michael")
     assert cfg.voice is not None and cfg.identity is not None
+
+
+def test_unique_persona_id_and_slug(session):
+    from app.personas.repo import seed_personas_from_configs, slugify, unique_persona_id
+
+    seed_personas_from_configs(session)
+    assert slugify("Anna Müller-Schmidt!") == "anna_muller_schmidt"
+    assert unique_persona_id(session, "Michael") == "michael_2"  # michael exists
+    assert unique_persona_id(session, "Zoë") == "zoe"
+
+
+def test_persona_draft_endpoint_returns_valid_persona(client):
+    r = client.post(
+        "/personas/draft",
+        json={
+            "name": "Anna",
+            "age": 29,
+            "location": "Berlin, Germany",
+            "language": "de-DE",
+            "about": "UX designer at a startup, loves climbing and coffee.",
+        },
+    )
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["id"] == "anna" and d["identity"]["name"] == "Anna" and d["identity"]["age"] == 29
+    assert d["language"] == "de-DE" and d["topics"] and d["tone"] and d["voice"]["provider"] == "elevenlabs"
+    # the draft is creatable as-is
+    r2 = client.post("/personas", json=d)
+    assert r2.status_code == 201, r2.text
+    # a second Anna gets a unique id
+    r3 = client.post("/personas/draft", json={"name": "Anna", "about": "Another Anna who bakes bread every weekend."})
+    assert r3.json()["id"] == "anna_2"
+
+
+def test_persona_draft_validation(client):
+    assert client.post("/personas/draft", json={"name": "", "about": "long enough text here"}).status_code == 422
+    assert client.post("/personas/draft", json={"name": "Bob", "about": "short"}).status_code == 422

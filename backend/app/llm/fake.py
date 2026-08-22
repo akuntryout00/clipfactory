@@ -9,6 +9,7 @@ from app.schemas.pipeline import (
     AssetRankOutput,
     ClipAnalysis,
     NormalizedScene,
+    PersonaDraft,
     SceneAssetChoice,
     ScenePlanOutput,
     ScriptOutput,
@@ -163,6 +164,21 @@ class FakeLLM:
                 )
                 for a in assets
             ]
+        )
+
+    def draft_persona(self, *, name: str, age: int | None, location: str | None, language: str, about: str) -> PersonaDraft:
+        role = about.strip().split(".")[0][:40] or "Creator"
+        return PersonaDraft(
+            display_name=f"{name} — {role}",
+            background=f"{about.strip()} ({age or '?'}, {location or 'somewhere'})",
+            speaks_as="first person ('I'), talking to one viewer ('you')",
+            audience=f"People who share {name}'s interests",
+            topics=["daily routines", "tools", "lessons learned", "behind the scenes"],
+            tone=["friendly", "direct", "concrete"],
+            avoid=["hype", "fake statistics", "corporate language"],
+            tools=["Notion (planning)"],
+            closing_style="punchline_no_cta",
+            product_mention_policy="never",
         )
 
     def analyze_clip(self, *, frames: list[bytes], filename: str, duration: float, categories: list[str]) -> ClipAnalysis:

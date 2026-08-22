@@ -22,6 +22,8 @@ export const api = {
   deleteTemplate: (id: string) => req<void>(`/templates/${id}`, { method: "DELETE" }),
   personas: () => req<Persona[]>("/personas"),
   createPersona: (p: Persona) => req<Persona>("/personas", { method: "POST", body: JSON.stringify(p) }),
+  draftPersona: (body: { name: string; age?: number | null; location?: string | null; language?: string; about: string }) =>
+    req<Persona>("/personas/draft", { method: "POST", body: JSON.stringify(body) }),
   updatePersona: (p: Persona) => req<Persona>(`/personas/${p.id}`, { method: "PUT", body: JSON.stringify(p) }),
   deletePersona: (id: string) => req<void>(`/personas/${id}`, { method: "DELETE" }),
   projects: (persona?: string) => req<Project[]>(`/projects${persona ? `?persona=${encodeURIComponent(persona)}` : ""}`),

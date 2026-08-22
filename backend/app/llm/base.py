@@ -10,6 +10,7 @@ from app.schemas.pipeline import (
     AssetRankOutput,
     ClipAnalysis,
     NormalizedScene,
+    PersonaDraft,
     ScenePlanOutput,
     ScriptOutput,
     WordTiming,
@@ -42,6 +43,8 @@ class LLMProvider(Protocol):
     def analyze_clip(self, *, frames: list[bytes], filename: str, duration: float, categories: list[str]) -> ClipAnalysis: ...
 
     def rank_assets(self, *, topic: str, scenes: list[NormalizedScene], candidates: dict[int, list[dict]]) -> AssetRankOutput: ...
+
+    def draft_persona(self, *, name: str, age: int | None, location: str | None, language: str, about: str) -> PersonaDraft: ...
 
 
 def get_llm(provider: str | None = None) -> LLMProvider:
