@@ -114,14 +114,26 @@ def list_fonts(fonts_dir: Path | None, include_system: bool = True) -> list[dict
             if f.suffix.lower() not in FONT_EXT or f.name.startswith("."):
                 continue
             fam, sty = font_family_from_file(f)
-            out.append({"family": fam, "style": sty, "file": f.name, "source": "fonts_dir"})
+            out.append({"family": fam, "style": sty, "file": f.name, "source": "fonts_dir", "line_factor": _line_factor(f)})
             seen.add(fam)
     if include_system:
         for fam in sorted({ln.split(",")[0].strip() for ln in _fc(["fc-list", ":", "family"])}):
             if fam and fam not in seen and not fam.startswith("."):
-                out.append({"family": fam, "style": None, "file": None, "source": "system"})
+                from app.captions.fonts import find_font_file
+
+                sysf = find_font_file(fam, True, None)
+                out.append(
+                    {"family": fam, "style": None, "file": None, "source": "system", "line_factor": _line_factor(sysf) if sysf else None}
+                )
                 seen.add(fam)
     return out
+
+
+def _line_factor(path: Path | None) -> float | None:
+    from app.captions.fonts import font_metrics
+
+    m = font_metrics(str(path)) if path else None
+    return round(m.line_factor, 4) if m else None
 
 
 def save_font_file(fonts_dir: Path, filename: str, data: bytes) -> dict:

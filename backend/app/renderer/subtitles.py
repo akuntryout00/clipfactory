@@ -9,9 +9,9 @@ from app.schemas.configs import CaptionStyleConfig
 from app.schemas.pipeline import VideoJSON
 
 
-def build_ass_for_video(video: VideoJSON, style: CaptionStyleConfig, out_path: Path) -> Path:
+def build_ass_for_video(video: VideoJSON, style: CaptionStyleConfig, out_path: Path, fonts_dir: Path | None = None) -> Path:
     overlays = [(s.start + 0.05, s.end - 0.05, s.text) for s in video.scenes if s.text]
-    return write_ass(video.captions, overlays, style, out_path)
+    return write_ass(video.captions, overlays, style, out_path, fonts_dir=fonts_dir)
 
 
 def ass_filter_arg(path: Path, fonts_dir: Path | None = None) -> str:

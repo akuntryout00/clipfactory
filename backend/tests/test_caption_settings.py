@@ -55,7 +55,7 @@ def test_font_family_from_bundled_file():
 def test_list_fonts_includes_fonts_dir_files(tmp_path):
     (tmp_path / "MyFont-Bold.ttf").write_bytes(b"\x00\x01\x00\x00" + b"0" * 64)
     fonts = list_fonts(tmp_path, include_system=False)
-    assert fonts == [{"family": "MyFont", "style": "Bold", "file": "MyFont-Bold.ttf", "source": "fonts_dir"}]
+    assert fonts == [{"family": "MyFont", "style": "Bold", "file": "MyFont-Bold.ttf", "source": "fonts_dir", "line_factor": None}]
 
 
 def test_caption_settings_and_project_overrides_api(client):  # noqa: F811

@@ -20,6 +20,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "google-genai>=1.0,<3",
     "fal-client>=0.5,<2",
+    "pillow>=10,<13",
 ]
 
 [project.optional-dependencies]

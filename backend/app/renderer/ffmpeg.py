@@ -116,14 +116,15 @@ def render_video(
     # ---- stage 2: concat + subtitles/overlays + audio mix + encode
     concat_list = work_dir / "concat.txt"
     concat_list.write_text("".join(f"file '{c.as_posix()}'\n" for c in clips), encoding="utf-8")
-    ass_path = build_ass_for_video(video, style, work_dir / "captions.ass")
-    result.ass_path = str(ass_path)
-    total = video.total_duration
-
     if fonts_dir is None and style.font_file:
         fonts_dir = Path(style.font_file).parent
     if fonts_dir is None and settings.font_file:
         fonts_dir = Path(settings.font_file).parent
+    if fonts_dir is None and Path(settings.fonts_dir).is_dir():
+        fonts_dir = Path(settings.fonts_dir)
+    ass_path = build_ass_for_video(video, style, work_dir / "captions.ass", fonts_dir=fonts_dir)
+    result.ass_path = str(ass_path)
+    total = video.total_duration
 
     inputs = ["-f", "concat", "-safe", "0", "-i", str(concat_list), "-i", str(voice_path)]
     has_music = bool(music_path and Path(music_path).is_file())

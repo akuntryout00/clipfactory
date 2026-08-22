@@ -41,7 +41,7 @@ export interface CaptionStyle {
   safe_zone: { top: number; bottom: number; left: number; right: number }
   overlay: { font_name: string; font_size: number; bold: boolean; primary_color: string; outline_color: string; outline: number; vertical_anchor_ratio: number; max_chars_per_line: number }
 }
-export interface FontInfo { family: string; style: string | null; file: string | null; source: "fonts_dir" | "system" }
+export interface FontInfo { family: string; style: string | null; file: string | null; source: "fonts_dir" | "system"; line_factor?: number | null }
 export interface Asset {
   id: string; file: string; description: string | null; tags: string[]; action: string | null; location: string | null
   shot: string | null; mood: string | null; duration: number; width: number | null; height: number | null; fps: number | null

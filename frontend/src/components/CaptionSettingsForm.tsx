@@ -151,15 +151,21 @@ export function CaptionSettingsForm({ base, value, onChange, scopeLabel }: {
           <span>Goes to <code className="font-mono">{fontsData?.fonts_dir ?? "fonts/"}</code> · {dirFonts.length} in folder · {sysFonts.length} system</span>
         </div>
       </div>
-      <CaptionPreview style={eff} />
+      <CaptionPreview style={eff} fonts={fonts} />
     </div>
   )
 }
 
-/** 9:16 frame with safe zones, one caption chunk and one overlay at their vertical anchors (text scaled 1080 → preview width). */
-export function CaptionPreview({ style }: { style: CaptionStyle }) {
+/**
+ * 9:16 frame with safe zones, one caption chunk and one overlay at their vertical anchors (text scaled 1080 → preview width).
+ * ASS font size = line height (ascent+descent), CSS font-size = em, so CSS px = ASS size / line_factor of that font.
+ */
+export function CaptionPreview({ style, fonts }: { style: CaptionStyle; fonts?: FontInfo[] }) {
   const W = 234, H = 416, k = W / 1080
   const sz = style.safe_zone
+  const lf = (family: string) => fonts?.find(f => f.family === family)?.line_factor ?? 1.17
+  const capPx = (style.font_size / lf(style.font_name)) * k
+  const ovPx = (style.overlay.font_size / lf(style.overlay.font_name)) * k
   return (
     <div>
       <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Preview</div>
@@ -169,10 +175,10 @@ export function CaptionPreview({ style }: { style: CaptionStyle }) {
         <div className="absolute inset-y-0 right-0 border-l border-dashed border-fail/40" style={{ width: W * sz.right }} />
         <div className="absolute inset-y-0 left-0 border-r border-dashed border-fail/40" style={{ width: W * sz.left }} />
         <div className="absolute left-0 right-0 flex justify-center px-2 text-center" style={{ top: H * style.overlay.vertical_anchor_ratio, transform: "translateY(-100%)" }}>
-          <span style={{ fontFamily: `"${style.overlay.font_name}", "DejaVu Sans", sans-serif`, fontSize: style.overlay.font_size * k, fontWeight: style.overlay.bold ? 700 : 400, color: "#fff", lineHeight: 1.05, letterSpacing: 0.5, WebkitTextStroke: `${Math.max(1, style.overlay.outline * k * 0.8)}px #000`, paintOrder: "stroke fill" }}>ONE THING</span>
+          <span style={{ fontFamily: `"${style.overlay.font_name}", "DejaVu Sans", sans-serif`, fontSize: ovPx, fontWeight: style.overlay.bold ? 700 : 400, color: "#fff", lineHeight: 1.05, letterSpacing: 0.5, WebkitTextStroke: `${Math.max(1, style.overlay.outline * k * 0.8)}px #000`, paintOrder: "stroke fill" }}>ONE THING</span>
         </div>
         <div className="absolute left-0 right-0 flex justify-center px-2 text-center" style={{ top: H * style.vertical_anchor_ratio, transform: "translateY(-100%)" }}>
-          <span style={{ fontFamily: `"${style.font_name}", "DejaVu Sans", sans-serif`, fontSize: style.font_size * k, fontWeight: style.bold ? 700 : 400, color: "#fff", lineHeight: 1.1, WebkitTextStroke: `${Math.max(1, style.outline * k * 0.8)}px #000`, paintOrder: "stroke fill" }}>you opened <span style={{ color: "#FFE500" }}>your laptop</span></span>
+          <span style={{ fontFamily: `"${style.font_name}", "DejaVu Sans", sans-serif`, fontSize: capPx, fontWeight: style.bold ? 700 : 400, color: "#fff", lineHeight: 1.1, WebkitTextStroke: `${Math.max(1, style.outline * k * 0.8)}px #000`, paintOrder: "stroke fill" }}>you opened <span style={{ color: "#FFE500" }}>your laptop</span></span>
         </div>
       </div>
       <p className="mt-1 w-[234px] text-[11px] text-muted-foreground">Dashed = TikTok safe zones. Font: <span className="font-mono">{style.font_name}</span> {style.font_size}px · overlay <span className="font-mono">{style.overlay.font_name}</span> {style.overlay.font_size}px</p>

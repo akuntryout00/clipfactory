@@ -3,6 +3,8 @@
 All notable changes are documented here. Format: Keep a Changelog · SemVer.
 
 ## [Unreleased]
+### Fixed
+- Caption size consistency: wrapping and the shrink safety net now measure real glyph widths with the selected font (Pillow/FreeType) instead of character counts, so narrow fonts are no longer shrunk and chunks keep one size; the UI preview converts ASS line-height sizes to em (OS/2 win metrics, like libass) so it matches the render.
 ### Added
 - Caption font & position settings: global (System → Captions) and per project (Captions button), live 9:16 preview with safe zones, font list from `fonts/` + system fonts, font upload; bundled OFL fonts (Anton, Bebas Neue, Montserrat, Oswald, Poppins).
 - Persona wizard: New persona = name → country/city/age (language auto from country) → free-text description → AI drafts the full profile (`POST /personas/draft`) → review & create; id and list name are system-generated.

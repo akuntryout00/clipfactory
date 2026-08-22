@@ -136,6 +136,37 @@ def _wrap(text: str, max_chars: int, max_lines: int) -> str:
     return "\\N".join(" ".join(words[i] for i in line) for line in _wrap_words(words, max_chars, max_lines))
 
 
+def _wrap_by_width(words: list[str], measure, max_width: float, max_lines: int) -> list[list[int]]:
+    """Greedy wrap on measured pixel widths (same greedy shape as _wrap_words)."""
+    lines: list[list[int]] = []
+    cur: list[int] = []
+    for i in range(len(words)):
+        trial = " ".join(words[j] for j in [*cur, i])
+        if cur and measure(trial) > max_width:
+            lines.append(cur)
+            cur = [i]
+        else:
+            cur.append(i)
+    if cur:
+        lines.append(cur)
+    if len(lines) > max_lines:
+        lines = lines[: max_lines - 1] + [[i for line in lines[max_lines - 1 :] for i in line]]
+    return lines
+
+
+def _fit(words: list[str], measure, max_width: float, max_chars: int, max_lines: int) -> tuple[list[list[int]], int]:
+    """Wrap words to fit `max_width`; returns (lines, scale_pct). scale_pct < 100 only when even a single word/line cannot fit."""
+    if measure is None:
+        wrapped = _wrap_words(words, max_chars, max_lines)
+        longest = max(sum(len(words[i]) for i in line) + len(line) - 1 for line in wrapped)
+        pct = 100 if longest <= max_chars else max(60, int(100 * max_chars / longest))
+        return wrapped, pct
+    wrapped = _wrap_by_width(words, measure, max_width, max_lines)
+    widest = max(measure(" ".join(words[i] for i in line)) for line in wrapped)
+    pct = 100 if widest <= max_width else max(60, int(100 * max_width / widest))
+    return wrapped, pct
+
+
 def _esc(text: str) -> str:
     return text.replace("{", "(").replace("}", ")")
 
@@ -147,7 +178,10 @@ def write_ass(
     out_path: Path,
     width: int = 1080,
     height: int = 1920,
+    fonts_dir: Path | None = None,
 ) -> Path:
+    from app.captions.fonts import TextMeasurer
+
     sz = style.safe_zone
     margin_l = int(width * sz.left)
     margin_r = int(width * sz.right)
@@ -174,6 +208,12 @@ def write_ass(
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
+    # measure with the real font so wrapping/shrinking follow glyph widths, not character counts
+    safe_w = width - margin_l - margin_r - 2 * style.outline
+    cap_m = TextMeasurer(style.font_name, style.bold, style.font_size, fonts_dir)
+    ov_m = TextMeasurer(ov.font_name, ov.bold, ov.font_size, fonts_dir)
+    cap_measure = cap_m.width if cap_m.exact else None
+    ov_measure = ov_m.width if ov_m.exact else None
     pop = ""
     if style.animation == "pop":
         d = style.pop_duration_ms
@@ -182,12 +222,8 @@ def write_ass(
         pop = f"{{\\fad({style.pop_duration_ms},0)}}"
     for c in chunks:
         words = [_esc(w) for w in c.text.split()]
-        wrapped = _wrap_words(words, style.max_chars_per_line, style.max_lines)
-        longest = max(sum(len(words[i]) for i in line) + len(line) - 1 for line in wrapped)
-        shrink = ""
-        if longest > style.max_chars_per_line:  # safety net: scale the font so the longest line fits the safe width
-            pct = max(60, int(100 * style.max_chars_per_line / longest))
-            shrink = f"{{\\fscx{pct}\\fscy{pct}}}"
+        wrapped, pct = _fit(words, cap_measure, safe_w, style.max_chars_per_line, style.max_lines)
+        shrink = "" if pct >= 100 else f"{{\\fscx{pct}\\fscy{pct}}}"  # safety net only when a line really cannot fit
         if c.emphasis_index is not None and 0 <= c.emphasis_index < len(words):
             w = words[c.emphasis_index]
             words[c.emphasis_index] = f"{{\\1c{style.emphasis_color}}}{w}{{\\1c{style.primary_color}}}"
@@ -195,8 +231,11 @@ def write_ass(
         lines.append(f"Dialogue: 0,{_ts(c.start)},{_ts(c.end)},Caption,,0,0,0,,{shrink}{pop}{text}")
     for start, end, text in overlays:
         fade = f"{{\\fad({ov.fade_ms},{ov.fade_ms})}}"
-        wrapped = _wrap(_esc(text), ov.max_chars_per_line, 3)
-        lines.append(f"Dialogue: 1,{_ts(start)},{_ts(end)},Overlay,,0,0,0,,{fade}{wrapped}")
+        ow = [_esc(w) for w in text.split()]
+        olines, opct = _fit(ow, ov_measure, safe_w, ov.max_chars_per_line, 3)
+        oshrink = "" if opct >= 100 else f"{{\\fscx{opct}\\fscy{opct}}}"
+        wrapped = "\\N".join(" ".join(ow[i] for i in line) for line in olines)
+        lines.append(f"Dialogue: 1,{_ts(start)},{_ts(end)},Overlay,,0,0,0,,{fade}{oshrink}{wrapped}")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return out_path
