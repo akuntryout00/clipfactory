@@ -11,6 +11,13 @@ from sqlalchemy.orm import sessionmaker
 from app.config.settings import get_settings
 
 app = typer.Typer(help="ClipFactory CLI — topic + template → vertical MP4 from your own B-roll", no_args_is_help=True, add_completion=False)
+
+
+@app.callback()
+def _main() -> None:
+    _apply_ui_settings()
+
+
 assets_app = typer.Typer(help="Asset library commands", no_args_is_help=True)
 projects_app = typer.Typer(help="Project commands", no_args_is_help=True)
 app.add_typer(assets_app, name="assets")
@@ -19,6 +26,17 @@ app.add_typer(projects_app, name="projects")
 # overridable in tests
 SESSION_FACTORY: sessionmaker | None = None
 SERVICE_KWARGS: dict = {}
+
+
+def _apply_ui_settings() -> None:
+    """Keys saved in the web UI live in the DB; make the CLI see them too (best effort, DB may not exist yet)."""
+    try:
+        from app.config.store import apply_from_db
+
+        with _factory()() as s:
+            apply_from_db(s)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _factory() -> sessionmaker:

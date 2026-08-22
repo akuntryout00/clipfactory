@@ -210,6 +210,42 @@ def persona_delete(persona_id: str, db: Session = Depends(get_db)):
     return Response(status_code=204)
 
 
+# ---------- provider settings (first-run setup) ----------
+@router.get("/settings/providers")
+def providers_get(db: Session = Depends(get_db)):
+    from app.config import store
+
+    return store.describe(db)
+
+
+@router.put("/settings/providers")
+def providers_put(body: dict, db: Session = Depends(get_db)):
+    """Save keys/models entered in the UI. Missing fields stay unchanged; empty string clears a field."""
+    from app.config import store
+
+    unknown = [k for k in body if k not in store.FIELDS]
+    if unknown:
+        raise HTTPException(422, f"unknown settings: {', '.join(unknown)}")
+    for k in ("llm_provider", "voice_provider", "lab_video_provider"):
+        v = body.get(k)
+        if v and k != "lab_video_provider" and v not in ("openai", "elevenlabs", "fake"):
+            raise HTTPException(422, f"{k} must be a provider name or 'fake'")
+    store.save(db, body)
+    return store.describe(db)
+
+
+class ProviderTest(BaseModel):
+    provider: str
+    values: dict | None = None  # unsaved values from the form (e.g. a key being typed)
+
+
+@router.post("/settings/providers/test")
+def providers_test(body: ProviderTest):
+    from app.config import store
+
+    return store.test_provider(body.provider, body.values or {})
+
+
 # ---------- caption settings & fonts ----------
 def fonts_dir(request: Request) -> Path:
     return Path(request.app.state.service_kwargs.get("fonts_dir") or get_settings().fonts_dir)
@@ -286,7 +322,13 @@ def system(request: Request, db: Session = Depends(get_db)):
         ffmpeg_ver = subprocess.run([st.ffmpeg_bin, "-version"], capture_output=True, text=True).stdout.splitlines()[0]
     except Exception:  # noqa: BLE001
         ffmpeg_ver = "not found"
+    from app.config import store
+
+    setup = store.status(st)
     return {
+        "configured": setup["configured"],
+        "setup_required": setup["setup_required"],
+        "missing": setup["missing"],
         "llm_provider": getattr(llm, "name", None) or st.llm_provider,
         "openai_model": st.openai_model,
         "openai_key_set": bool(st.openai_api_key),

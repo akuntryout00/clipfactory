@@ -3,6 +3,8 @@
 All notable changes are documented here. Format: Keep a Changelog · SemVer.
 
 ## [Unreleased]
+### Added
+- Plug-and-play first run: `docker compose up` works without `.env`; a **Setup** page asks for the provider keys (OpenAI, ElevenLabs with voice picker, optional Google / fal.ai), tests the connections and stores them in the database (overriding `.env`); the app redirects to Setup until the required providers are configured; Settings page to change them later; offline dry-run mode with fake providers. API `GET/PUT /settings/providers`, `POST /settings/providers/test`; `/system` reports `setup_required`.
 ### Changed
 - Open-source hygiene: example persona seed `indie_maker` (anonymized) replaces the author's personal persona in the repo; personal library files (`assets/broll_database.json`, `rename_map.csv`, `_rejected/`) are no longer tracked; complete `.env.example`; README first-run walkthrough; license/maintainer/security contact.
 ### Added

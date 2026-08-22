@@ -36,6 +36,11 @@ def create_app(
 
             init_db()
             app.state.session_factory = get_sessionmaker()
+            # keys/models saved from the web UI override .env for every later get_settings() call
+            from app.config.store import apply_from_db
+
+            with app.state.session_factory() as s:
+                apply_from_db(s)
             get_settings().ensure_dirs()
             _seed_configs(app.state.session_factory, cfg_dir)
         else:

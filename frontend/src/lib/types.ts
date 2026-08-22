@@ -98,7 +98,14 @@ export interface Artifacts {
   plans: (Plan & { version: number })[]
   renders: (RenderInfo & { url: string | null; seed: number })[]
 }
+export interface ProviderField { set: boolean; source: "ui" | "env" | null; value: string | null; secret: boolean }
+export interface ProviderSettings {
+  fields: Record<string, ProviderField>; configured: boolean; setup_required: boolean; missing: string[]
+  llm_provider: string; voice_provider: string; lab_ready: boolean
+}
+export interface ProviderTestResult { ok: boolean; message: string; voices?: { id: string; name: string; labels?: Record<string, string> }[] }
 export interface SystemInfo {
+  configured?: boolean; setup_required?: boolean; missing?: string[]
   llm_provider: string; openai_model: string; openai_key_set: boolean; voice_provider: string; elevenlabs_key_set: boolean
   elevenlabs_voice_id_set: boolean; default_persona: string; database_url: string; assets_dir: string; storage_dir: string; fonts_dir?: string
   ffmpeg: string; render_ok: boolean; render_missing: string[]; assets_count: number; assets_approved: number

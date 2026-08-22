@@ -31,19 +31,20 @@ ClipFactory is a self-hosted content pipeline you run on your own machine (Docke
 ## Quick start
 
 ```bash
-cp .env.example .env           # fill the keys you have (OpenAI + ElevenLabs are enough for the content factory)
-make build && make up          # db + api + web → UI http://localhost:3000 · API docs http://localhost:8000/docs
-make doctor                    # keys / ffmpeg / dirs check
+git clone https://github.com/<you>/clipfactory.git && cd clipfactory
+docker compose up -d           # builds db + api + web on first run → open http://localhost:3000
 ```
 
-Then, in the web UI at **http://localhost:3000** (first run, ~15 minutes + filming):
+No `.env` needed: the first page you see is **Setup** — paste your OpenAI and ElevenLabs keys (Test connection, pick a voice), optionally Google / fal.ai for the AI Lab, save. Keys are stored in the app's local database and can be changed any time under **Settings**. (`.env` still works for headless/CI setups — copy `.env.example`; values saved in the UI override it. Tick *Offline dry run* to try the pipeline with fake providers and no keys.)
+
+Then, in the web UI (first run, ~15 minutes + filming):
 
 1. **Personas → New persona** — three questions (name · place & age · a paragraph about them); AI drafts the full profile, you review and create. Two example personas ship as seeds.
 2. **B-roll** — the persona gets an AI **shot list** (what to film, grouped by folder, default 100 clips). Film a handful, upload them with **Add video** (AI autocomplete fills the metadata) or drop files into `assets/<persona>/<category>/` and run `make import`. The page shows how much of the target is covered.
 3. **Generate** — pick template, topic, length → script, voice, scene plan, B-roll selection, captions and render run in the background; the project page shows every stage, the timeline, and lets you regenerate the script, change clips per scene, render again, approve.
 4. **Batch** (Projects page) — queue N videos with AI-picked topics and follow the progress; **System → Captions** sets fonts and positions for all renders; the **AI Lab** is a separate module for fully generated clips.
 
-CLI equivalent: `make generate TEMPLATE=story_v1 TOPIC="Why I stopped answering Slack in the morning"` → `storage/projects/proj_xxx/final.mp4`.
+CLI: `make doctor` checks keys/ffmpeg; `make generate TEMPLATE=story_v1 TOPIC="Why I stopped answering Slack in the morning"` → `storage/projects/proj_xxx/final.mp4`.
 
 > The API has **no authentication** — run it on your machine or LAN only (see SECURITY.md).
 

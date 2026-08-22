@@ -1,4 +1,4 @@
-import type { Artifacts, Asset, Batch, Candidate, Shotlist, CaptionOverrides, CaptionStyle, ClipAnalysis, FontInfo, LabEstimate, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
+import type { Artifacts, Asset, Batch, Candidate, ProviderSettings, ProviderTestResult, Shotlist, CaptionOverrides, CaptionStyle, ClipAnalysis, FontInfo, LabEstimate, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
 
 export const API = import.meta.env.VITE_API_BASE || "/api"
 
@@ -15,6 +15,9 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   system: () => req<SystemInfo>("/system"),
+  providerSettings: () => req<ProviderSettings>("/settings/providers"),
+  saveProviderSettings: (values: Record<string, string | null>) => req<ProviderSettings>("/settings/providers", { method: "PUT", body: JSON.stringify(values) }),
+  testProvider: (provider: string, values?: Record<string, string>) => req<ProviderTestResult>("/settings/providers/test", { method: "POST", body: JSON.stringify({ provider, values: values ?? null }) }),
   templates: () => req<Template[]>("/templates"),
   captionStyles: () => req<string[]>("/caption-styles"),
   createTemplate: (t: Template) => req<Template>("/templates", { method: "POST", body: JSON.stringify(t) }),

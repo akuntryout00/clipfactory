@@ -1,10 +1,11 @@
-import { NavLink, Route, Routes, Navigate } from "react-router-dom"
-import { Clapperboard, FlaskConical, Film, LayoutList, Plus, Settings2, SlidersHorizontal, UserRound } from "lucide-react"
+import { NavLink, Route, Routes, Navigate, useLocation } from "react-router-dom"
+import { Clapperboard, FlaskConical, Film, KeyRound, LayoutList, Plus, Settings2, SlidersHorizontal, UserRound } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { PersonaProvider, personaLabel, usePersona } from "@/lib/persona"
 import PersonasPage from "@/pages/PersonasPage"
+import SetupPage from "@/pages/SetupPage"
 import ProjectsPage from "@/pages/ProjectsPage"
 import GeneratePage from "@/pages/GeneratePage"
 import ProjectPage from "@/pages/ProjectPage"
@@ -21,6 +22,7 @@ const nav = [
   { to: "/personas", label: "Personas", icon: UserRound },
   { to: "/templates", label: "Templates", icon: SlidersHorizontal },
   { to: "/system", label: "System", icon: Settings2 },
+  { to: "/setup", label: "Settings", icon: KeyRound },
 ]
 
 /** Scopes Projects, Generate and B-roll to one persona. */
@@ -57,6 +59,14 @@ export default function App() {
   )
 }
 
+/** First run: until the required providers are configured, every page redirects to Setup (System stays reachable). */
+function SetupGuard({ children }: { children: React.ReactNode }) {
+  const { data: sys } = useQuery({ queryKey: ["system"], queryFn: api.system, staleTime: 15_000 })
+  const loc = useLocation()
+  if (sys?.setup_required && loc.pathname !== "/setup" && loc.pathname !== "/system") return <Navigate to="/setup" replace />
+  return <>{children}</>
+}
+
 function Shell() {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -89,6 +99,7 @@ function Shell() {
         <SidebarFooter />
       </aside>
       <main className="min-w-0 flex-1">
+        <SetupGuard>
         <Routes>
           <Route path="/" element={<Navigate to="/projects" replace />} />
           <Route path="/projects" element={<ProjectsPage />} />
@@ -100,7 +111,9 @@ function Shell() {
           <Route path="/system" element={<SystemPage />} />
           <Route path="/lab" element={<LabPage />} />
           <Route path="/lab/:id" element={<LabVideoPage />} />
+          <Route path="/setup" element={<SetupPage />} />
         </Routes>
+        </SetupGuard>
       </main>
     </div>
   )

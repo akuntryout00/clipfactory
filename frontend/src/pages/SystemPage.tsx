@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Check, Save, X } from "lucide-react"
 import { toast } from "sonner"
@@ -21,7 +22,7 @@ export default function SystemPage() {
         {error && <p className="text-fail">API unreachable: {String(error)}</p>}
         {s && (<>
           <Card><CardHeader><CardTitle className="text-sm">LLM</CardTitle></CardHeader><CardContent className="space-y-1 font-mono text-xs">
-            <div>provider <b>{s.llm_provider}</b></div><div>model {s.openai_model}</div><div>OPENAI_API_KEY {ok(s.openai_key_set)}</div></CardContent></Card>
+            <div>provider <b>{s.llm_provider}</b></div><div>model {s.openai_model}</div><div>OPENAI_API_KEY {ok(s.openai_key_set)}</div><div className="pt-1"><Link to="/setup" className="text-primary underline-offset-2 hover:underline">Edit provider settings →</Link></div></CardContent></Card>
           <Card><CardHeader><CardTitle className="text-sm">Voice</CardTitle></CardHeader><CardContent className="space-y-1 font-mono text-xs">
             <div>provider <b>{s.voice_provider}</b></div><div>ELEVENLABS_API_KEY {ok(s.elevenlabs_key_set)}</div><div>ELEVENLABS_VOICE_ID {ok(s.elevenlabs_voice_id_set)}</div></CardContent></Card>
           <Card><CardHeader><CardTitle className="text-sm">Render</CardTitle></CardHeader><CardContent className="space-y-1 font-mono text-xs">

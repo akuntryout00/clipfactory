@@ -20,7 +20,8 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     env_file:
-      - .env
+      - path: .env          # optional: keys can also be entered in the web UI (Setup page) on first run
+        required: false
     environment:
       DATABASE_URL: postgresql+psycopg://ttcf:ttcf@db:5432/ttcf
       STORAGE_DIR: /app/storage
