@@ -1,4 +1,4 @@
-# TikTok Content Factory MVP — Design (as built)
+# ClipFactory MVP — Design (as built)
 
 Date: 2026-08-20 · Source: `prd.md` · Status: implemented (CLI + API), UI intentionally deferred
 
