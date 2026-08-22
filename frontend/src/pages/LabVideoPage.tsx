@@ -14,9 +14,9 @@ import { cn } from "@/lib/utils"
 const RUNNING = new Set(["PLANNING", "GENERATING_IMAGES", "ANIMATING"])
 const STEPS = [
   { key: "describe", label: "1 · Describe" },
-  { key: "plan", label: "2 · Storyboard (LLM)" },
-  { key: "images", label: "3 · Keyframes (OpenAI)" },
-  { key: "animate", label: "4 · Animate (Gemini Omni)" },
+  { key: "plan", label: "2 · Storyboard" },
+  { key: "images", label: "3 · Keyframes" },
+  { key: "animate", label: "4 · Animate" },
   { key: "done", label: "5 · Video" },
 ]
 function stepIndex(v: LabVideo): number {
