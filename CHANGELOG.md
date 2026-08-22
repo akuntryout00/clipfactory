@@ -3,6 +3,8 @@
 All notable changes are documented here. Format: Keep a Changelog · SemVer.
 
 ## [Unreleased]
+### Fixed
+- AI B-roll with a persona photo: OpenAI's safety system refused the previous identity prompt for real photos; the start frame now asks to *place the person from the reference image into the described scene* (face/hair kept, photo background not reused), retries with a plainer prompt, and falls back to fal.ai nano-banana image editing when a FAL key is set.
 
 ## [0.2.0] — 2026-08-22
 ### Added

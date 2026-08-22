@@ -158,7 +158,7 @@ export default function AiBrollPage() {
                 </div>
                 <label className={cn("flex items-start gap-2 text-sm", !imgStatus?.has_image && !customPhoto && "opacity-60")}>
                   <input type="checkbox" className="scrub mt-0.5 size-4" checked={useFace || !!customPhoto} disabled={!imgStatus?.has_image && !customPhoto} onChange={e => setUseFace(e.target.checked)} />
-                  <span><b>Keep this face in the clip</b> — the start frame is generated from the photo with an identity-preserving, high-quality edit and the video model is told to keep the face unchanged. Off = a generic person / no person.</span>
+                  <span><b>Use this face in the scene</b> — the person from the photo is placed into the scene you described (face, hair and build kept; the photo's background is not reused), the start frame is made at high quality, and the video model keeps the face unchanged. Off = a generic person / no person. Works best with a front-facing, well-lit photo.</span>
                 </label>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <input ref={customRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0] ?? null; setCustomPhoto(f); e.target.value = "" }} />

@@ -61,7 +61,9 @@ def _start(request: Request, job_id: str) -> None:
     def _job():
         with factory() as s:
             try:
-                AiBrollService(s, storage_dir=sd, assets_dir=ad, image=kw.get("image"), video=kw.get("video")).run(job_id)
+                AiBrollService(
+                    s, storage_dir=sd, assets_dir=ad, image=kw.get("image"), video=kw.get("video"), image_fallback=kw.get("image_fallback")
+                ).run(job_id)
             except Exception:  # noqa: BLE001 — persisted on the job
                 log.exception("ai b-roll %s failed", job_id)
 

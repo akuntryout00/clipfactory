@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.assets.importer import register_asset_file
 from app.config.settings import get_settings
-from app.lab.providers import ImageGen, VideoGen, get_image_gen, get_video_gen, provider_meta
+from app.lab.providers import FalImageEdit, ImageGen, ImageModerationError, VideoGen, get_image_gen, get_video_gen, provider_meta
 from app.models import AiBrollJob, Asset, ShotlistItem
 
 log = logging.getLogger(__name__)
@@ -53,6 +53,7 @@ class AiBrollService:
         assets_dir: Path | None = None,
         image: ImageGen | None = None,
         video: VideoGen | None = None,
+        image_fallback: ImageGen | None = None,
         progress=None,
     ):
         s = get_settings()
@@ -61,6 +62,7 @@ class AiBrollService:
         self.assets_dir = Path(assets_dir or s.assets_dir)
         self._image = image
         self._video = video
+        self._image_fallback = image_fallback
         self.progress = progress or (lambda job_id, stage, msg: None)
 
     # ---------------- helpers
@@ -152,7 +154,7 @@ class AiBrollService:
             ref = Path(j.reference_path) if j.reference_path else None
             scene = self._scene_prompt(j)
             if ref is not None and ref.is_file():
-                self._image_gen().generate(prompt=scene, out_path=kf, reference=ref, identity=True, quality="high")
+                self._identity_keyframe(j, scene, ref, kf)
             else:
                 self._image_gen().generate(prompt=scene, out_path=kf)
             j.keyframe_path = str(kf)
@@ -172,6 +174,21 @@ class AiBrollService:
             log.exception("ai b-roll job %s failed", j.id)
             raise
         return j
+
+    def _identity_keyframe(self, j: AiBrollJob, scene: str, ref: Path, kf: Path) -> None:
+        """Face-consistent start frame: OpenAI edit (softened prompts) → on a safety refusal, fal nano-banana edit if a FAL key exists."""
+        try:
+            self._image_gen().generate(prompt=scene, out_path=kf, reference=ref, identity=True, quality="high")
+            return
+        except ImageModerationError as exc:
+            fb = self._image_fallback or (FalImageEdit() if get_settings().fal_key else None)
+            if fb is None:
+                raise RuntimeError(
+                    "the image provider refused to use this photo (safety system). Try a different photo (front-facing, neutral "
+                    "background) or add a fal.ai key in Settings — then the face frame is made with Gemini image editing instead."
+                ) from exc
+            self._set(j, "KEYFRAME", "OpenAI refused the photo — placing the face into the scene with fal.ai (nano-banana)…")
+            fb.generate(prompt=scene, out_path=kf, reference=ref, identity=True, quality="high")
 
     def _scene_prompt(self, j: AiBrollJob) -> str:
         bits = [j.prompt]

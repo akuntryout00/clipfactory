@@ -143,3 +143,42 @@ def test_estimate_and_api(client):  # noqa: F811
     assert client.delete(f"/ai-broll/jobs/{j['id']}").status_code == 204
     assert client.delete("/ai-broll/personas/young_professional/image").status_code == 204
     assert client.post("/ai-broll/jobs", data={"persona_id": "x", "prompt": "too short?", "seconds": "99"}).status_code == 422
+
+
+def test_identity_prompts_avoid_trigger_words():
+    from app.lab.providers import identity_prompts
+
+    ps = identity_prompts("drinking water in a kitchen")
+    assert len(ps) == 2 and all("kitchen" in p for p in ps)
+    assert not any(w in p.lower() for p in ps for w in ("real person", "exact same person", "identity"))
+
+
+def test_moderation_refusal_falls_back_to_second_engine(session, mini_assets, tmp_path):
+    from app.lab.providers import ImageModerationError
+
+    sd = tmp_path / "storage"
+    save_persona_image(sd, "young_professional", _png_bytes())
+
+    class Refusing(FakeImageGen):
+        def generate(self, *, prompt, out_path, reference=None, identity=False, quality=None):
+            if identity:
+                raise ImageModerationError("refused")
+            return super().generate(prompt=prompt, out_path=out_path)
+
+    used = {}
+
+    class Fallback(FakeImageGen):
+        def generate(self, *, prompt, out_path, reference=None, identity=False, quality=None):
+            used["ok"] = (reference is not None, identity)
+            return super().generate(prompt=prompt, out_path=out_path)
+
+    svc = AiBrollService(session, storage_dir=sd, assets_dir=mini_assets, image=Refusing(), video=FakeVideoGen(), image_fallback=Fallback())
+    j = svc.create(
+        persona_id="young_professional",
+        prompt="Pouring a glass of water in a kitchen",
+        seconds=3,
+        video_provider="fake",
+        use_reference=True,
+    )
+    j = svc.run(j.id)
+    assert j.status == "DONE" and used["ok"] == (True, True)

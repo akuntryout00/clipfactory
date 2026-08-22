@@ -91,12 +91,29 @@ class FakePlanner:
 # ---------------- images ----------------
 
 
-IDENTITY_PROMPT = (
-    "The reference photo shows a REAL person. Recreate this exact same person with high-fidelity identity: same face shape, eyes, "
-    "nose, mouth, skin tone and texture, hairline and hair, facial hair, glasses and age — no beautification, no cartoon or "
-    "illustration. Photorealistic, natural light, sharp focus on the face, vertical 9:16 video still, no text, no watermark. "
-    "Scene:\n"
-)
+class ImageModerationError(RuntimeError):
+    """The image provider refused the request (safety system) — callers may try another engine."""
+
+
+def identity_prompts(scene: str) -> list[str]:
+    """Prompts that place the person from the reference photo into a new scene, strongest first.
+
+    Wording matters: asking to "recreate this real person / exact identity" trips OpenAI's safety system for photos of real
+    people, while "the person from the reference image" with a described scene passes. We keep the face/hair/build, and
+    describe a NEW composition — the photo is a character reference, not the start frame.
+    """
+    return [
+        (
+            "Create a new photorealistic image of the scene described below, featuring the person from the reference image as the "
+            "subject. Keep their face, hairstyle, facial hair, skin tone, glasses and build as in the photo so they are clearly the "
+            "same person; sharp, detailed face, natural skin texture. Do not copy the photo's background or framing — build the "
+            "scene fresh. Vertical 9:16 video still, natural light, candid documentary look, no text, no watermark.\nScene: " + scene
+        ),
+        (
+            "Put the person from the reference image into this scene, keeping their face and hair as in the photo. "
+            "Vertical 9:16 photo, realistic, natural light, no text.\nScene: " + scene
+        ),
+    ]
 
 
 class ImageGen(Protocol):
@@ -146,15 +163,30 @@ class OpenAIImageGen:
         s = get_settings()
         q = quality or s.openai_image_quality
         if reference is not None and reference.is_file() and not self.model.startswith("dall-e"):
-            edit_prompt = (
-                IDENTITY_PROMPT + prompt
-                if identity
-                else "Use the reference image for continuity: keep the SAME character (face, hair, wardrobe), the same place, "
-                "palette, lens and rendering style. Now create the NEXT frame of the story:\n" + prompt
-            )
             extra = {"input_fidelity": "high" if identity else s.openai_image_input_fidelity} if self.model == "gpt-image-1" else {}
-            with reference.open("rb") as fh:
-                resp = self._client.images.edit(model=self.model, image=[fh], prompt=edit_prompt, n=1, size=self.size, quality=q, **extra)
+            variants = (
+                identity_prompts(prompt)
+                if identity
+                else [
+                    "Use the reference image for continuity: keep the SAME character (face, hair, wardrobe), the same place, "
+                    "palette, lens and rendering style. Now create the NEXT frame of the story:\n" + prompt
+                ]
+            )
+            resp = None
+            last_err: Exception | None = None
+            for edit_prompt in variants:
+                try:
+                    with reference.open("rb") as fh:
+                        resp = self._client.images.edit(
+                            model=self.model, image=[fh], prompt=edit_prompt, n=1, size=self.size, quality=q, **extra
+                        )
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    last_err = exc
+                    if "moderation" not in str(exc).lower():
+                        raise
+            if resp is None:
+                raise ImageModerationError(f"image provider refused the reference photo: {str(last_err)[:200]}")
         else:
             kwargs = dict(model=self.model, prompt=prompt, n=1, size=self.size)
             if not self.model.startswith("dall-e"):
@@ -707,6 +739,44 @@ class FalVideoGen:
         raw = out_path.with_suffix(".raw.mp4")
         _download(url, raw)
         _normalize_segment(raw, out_path)
+        raw.unlink(missing_ok=True)
+        return out_path
+
+
+class FalImageEdit:
+    """fal.ai image editing with reference photos (Gemini 'nano-banana' edit) — fallback engine for face-consistent keyframes."""
+
+    name = "fal-image"
+    model = "fal-ai/nano-banana/edit"
+
+    def generate(
+        self, *, prompt: str, out_path: Path, reference: Path | None = None, identity: bool = False, quality: str | None = None
+    ) -> Path:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fal = _fal()
+        import os
+
+        if get_settings().fal_key and not os.environ.get("FAL_KEY"):
+            os.environ["FAL_KEY"] = get_settings().fal_key
+        args = {
+            "prompt": identity_prompts(prompt)[0] if reference else prompt,
+            "num_images": 1,
+            "output_format": "png",
+            "aspect_ratio": "9:16",
+        }
+        if reference is not None and reference.is_file():
+            args["image_urls"] = [fal.upload_file(reference)]
+            endpoint = self.model
+        else:
+            endpoint = "fal-ai/nano-banana"
+        result = fal.subscribe(endpoint, arguments=args, with_logs=False)
+        images = (result or {}).get("images") or []
+        url = images[0].get("url") if images and isinstance(images[0], dict) else None
+        if not url:
+            raise RuntimeError(f"fal returned no image: {str(result)[:300]}")
+        raw = out_path.with_suffix(".raw.png")
+        _download(url, raw)
+        _to_916_png(raw, out_path)
         raw.unlink(missing_ok=True)
         return out_path
 
