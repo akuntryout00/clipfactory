@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { FolderInput, Sparkles, Trash2, Upload, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { api, media } from "@/lib/api"
-import type { Asset } from "@/lib/types"
+import { personaLabel, usePersona } from "@/lib/persona"
+import type { Asset, Persona } from "@/lib/types"
 import { PageHeader } from "@/components/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,15 +16,18 @@ import { RangeTrimmer } from "@/components/RangeTrimmer"
 
 export default function AssetsPage() {
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({ queryKey: ["assets"], queryFn: api.assets })
+  const { activeId, active, personas } = usePersona()
+  const { data, isLoading } = useQuery({ queryKey: ["assets", activeId], queryFn: () => api.assets(activeId || undefined), enabled: !!activeId })
   const [q, setQ] = useState("")
   const [cat, setCat] = useState("ALL")
   const [edit, setEdit] = useState<Asset | null>(null)
   const [adding, setAdding] = useState(false)
   const imp = useMutation({ mutationFn: api.importAssets, onSuccess: r => { toast.success(`Imported: ${r.created} new, ${r.updated} refreshed`); qc.invalidateQueries({ queryKey: ["assets"] }) }, onError: e => toast.error(e.message) })
   const enrich = useMutation({ mutationFn: api.enrichAssets, onSuccess: r => { toast.success(`Enriched ${r.enriched} clips`); qc.invalidateQueries({ queryKey: ["assets"] }) }, onError: e => toast.error(e.message) })
-  const cats = useMemo(() => Array.from(new Set((data ?? []).map(a => a.file.split("/")[0]))).sort(), [data])
-  const rows = useMemo(() => (data ?? []).filter(a => (cat === "ALL" || a.file.startsWith(cat + "/")) &&
+  // files live under assets/<persona>/<category>/; the category is the second path segment
+  const catOf = (a: Asset) => { const parts = a.file.split("/"); return parts.length >= 3 ? parts[1] : parts[0] }
+  const cats = useMemo(() => Array.from(new Set((data ?? []).map(catOf))).sort(), [data])
+  const rows = useMemo(() => (data ?? []).filter(a => (cat === "ALL" || catOf(a) === cat) &&
     (!q || [a.id, a.file, a.description, a.action, a.location, a.mood, ...(a.tags ?? [])].join(" ").toLowerCase().includes(q.toLowerCase()))), [data, q, cat])
   const approved = (data ?? []).filter(a => a.approved).length
 
@@ -35,7 +39,7 @@ export default function AssetsPage() {
           <Button variant="outline" size="sm" onClick={() => imp.mutate()} disabled={imp.isPending}><FolderInput className="size-4" /> {imp.isPending ? "Importing…" : "Import folder"}</Button>
           <Button variant="outline" size="sm" onClick={() => enrich.mutate()} disabled={enrich.isPending}><Sparkles className="size-4" /> {enrich.isPending ? "Enriching…" : "Enrich with AI"}</Button>
         </>}>
-        <p className="mt-1 text-sm text-muted-foreground">{data?.length ?? 0} clips · {approved} approved · drop new files into <code className="font-mono">assets/&lt;category&gt;/</code> then Import.</p>
+        <p className="mt-1 text-sm text-muted-foreground"><span className="text-foreground">{personaLabel(active)}</span> · {data?.length ?? 0} clips · {approved} approved · drop new files into <code className="font-mono">assets/{activeId || "<persona>"}/&lt;category&gt;/</code> then Import.</p>
       </PageHeader>
       <div className="flex flex-wrap items-center gap-2 px-8 py-4">
         <Input placeholder="Search id, tags, description…" value={q} onChange={e => setQ(e.target.value)} className="h-8 w-72" />
@@ -63,14 +67,16 @@ export default function AssetsPage() {
         ))}
       </div>
       <AssetDialog asset={edit} onClose={() => setEdit(null)} />
-      <UploadDialog open={adding} onClose={() => setAdding(false)} categories={cats} />
+      <UploadDialog open={adding} onClose={() => setAdding(false)} categories={cats} personas={personas} defaultPersona={activeId} />
     </div>
   )
 }
 
-function UploadDialog({ open, onClose, categories }: { open: boolean; onClose: () => void; categories: string[] }) {
+function UploadDialog({ open, onClose, categories, personas, defaultPersona }: { open: boolean; onClose: () => void; categories: string[]; personas: Persona[]; defaultPersona: string }) {
   const qc = useQueryClient()
   const [file, setFile] = useState<File | null>(null)
+  const [personaId, setPersonaId] = useState(defaultPersona)
+  useEffect(() => { setPersonaId(defaultPersona) }, [defaultPersona, open])
   const [category, setCategory] = useState(categories[0] ?? "desk")
   const [newCat, setNewCat] = useState("")
   const [description, setDescription] = useState("")
@@ -98,7 +104,7 @@ function UploadDialog({ open, onClose, categories }: { open: boolean; onClose: (
   const up = useMutation({
     mutationFn: () => {
       const fd = new FormData()
-      fd.append("file", file!); fd.append("category", cat); fd.append("description", description); fd.append("tags", tags); fd.append("approved", String(approved))
+      fd.append("file", file!); fd.append("category", cat); fd.append("persona_id", personaId); fd.append("description", description); fd.append("tags", tags); fd.append("approved", String(approved))
       if (range) { fd.append("usable_start", String(range.s)); fd.append("usable_end", String(range.e)) }
       if (meta.action) fd.append("action", meta.action); if (meta.location) fd.append("location", meta.location)
       if (meta.shot) fd.append("shot", meta.shot); if (meta.mood) fd.append("mood", meta.mood); fd.append("quality_score", String(meta.quality))
@@ -143,6 +149,13 @@ function UploadDialog({ open, onClose, categories }: { open: boolean; onClose: (
               {analyze.isPending && <span className="animate-pulse font-mono text-[11px] text-primary">analyzing…</span>}
               {file && !analyze.isPending && ai && <button type="button" className="font-mono text-[11px] text-primary underline" onClick={() => analyze.mutate(file)}>re-run</button>}
             </label>
+            <div>
+              <Label className="text-xs text-muted-foreground">Persona (owner of this clip)</Label>
+              <select value={personaId} onChange={e => setPersonaId(e.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-2">
+                {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <p className="mt-1 text-[11px] text-muted-foreground">Saved to <code className="font-mono">assets/{personaId || "<persona>"}/{cat || "<category>"}/</code></p>
+            </div>
             <div>
               <Label className="text-xs text-muted-foreground">Category (folder)</Label>
               <div className="flex gap-2">

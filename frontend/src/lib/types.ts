@@ -33,7 +33,7 @@ export interface Asset {
   id: string; file: string; description: string | null; tags: string[]; action: string | null; location: string | null
   shot: string | null; mood: string | null; duration: number; width: number | null; height: number | null; fps: number | null
   orientation: string | null; usable_start: number; usable_end: number; quality_score: number; usage_count: number
-  last_used_at: string | null; approved: boolean
+  last_used_at: string | null; approved: boolean; persona_id: string | null
 }
 export interface Candidate {
   asset_id: string; description: string | null; tags: string[]; action: string | null; location: string | null
@@ -44,12 +44,16 @@ export interface Template {
   sections: { type: string; weight: number; guidance: string }[]; voiceover: boolean; caption_style: string
   music_category: string | null; closing: string | null; shot_duration: { min: number; max: number }; overlays: { min: number; max: number }
 }
+export type ProductPolicy = "never" | "occasional_soft" | "problem_solution_only"
+export type ClosingStyle = "punchline_no_cta" | "question" | "soft_follow"
+export interface PersonaIdentity { name: string; age?: number | null; location?: string | null; background?: string | null; speaks_as?: string }
+export interface PersonaVoice { provider: string; voice_id: string; model_id: string; speed: number; stability: number; similarity_boost: number; style: number; voice_id_set?: boolean }
 export interface Persona {
   id: string; name: string; language: string; audience: string; topics: string[]; tone: string[]; avoid: string[]
-  identity?: { name: string; age?: number; location?: string; background?: string } | null
-  tools: string[]; products: { name: string; one_liner: string }[]; product_mention_policy: string; closing_style: string
+  identity?: PersonaIdentity | null
+  tools: string[]; products: { name: string; one_liner: string }[]; product_mention_policy: ProductPolicy; closing_style: ClosingStyle
   target_duration: number; max_duration: number; speech_rate_wps: number
-  voice: { provider: string; voice_id: string; model_id: string; speed: number; stability: number; similarity_boost: number }
+  voice: PersonaVoice; default_music_category?: string | null
 }
 export interface CaptionChunk { start: number; end: number; text: string; emphasis_index: number | null }
 export interface PlanScene { order: number; start: number; end: number; asset_id: string; asset_file: string; asset_start: number; text: string | null; section: string | null }

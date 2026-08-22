@@ -51,7 +51,7 @@ Key modules: `content/script_generator.py` (word budget, shorten loop), `voice/a
 
 ## Asset library
 
-`assets/importer.py` scans `assets/**` (skipping `_originals`, `_rejected`), probes with ffprobe, seeds semantic metadata from `assets/broll_database.json` and heuristics; `assets/enrich.py` asks the LLM for richer tags; `assets/frames.py` samples frames for **AI autocomplete** on single-file upload (`POST /assets/analyze`, vision). Assets carry `usable_start/usable_end`, `quality_score`, `usage_count`, `last_used_at`, `approved`.
+`assets/importer.py` scans `assets/<persona>/<category>/**` (skipping `_originals`, `_rejected`; a first path segment that is not a persona id is treated as a legacy category and assigned to `DEFAULT_PERSONA`), probes with ffprobe, seeds semantic metadata from `assets/broll_database.json` and heuristics; `assets/enrich.py` asks the LLM for richer tags; `assets/frames.py` samples frames for **AI autocomplete** on single-file upload (`POST /assets/analyze`, vision). Assets carry `usable_start/usable_end`, `quality_score`, `usage_count`, `last_used_at`, `approved`.
 
 ## AI Lab
 
@@ -69,7 +69,7 @@ user reviews keyframes (edit & redo any) → animate: for each consecutive pair 
 `projects/jobs.py` — a small thread pool; at most one running job per project/video id (409 otherwise). Long work never blocks requests; the UI polls. Provider calls are synchronous inside the job.
 
 ## Configuration
-All behaviour that should change without code lives in `configs/` (personas, templates, caption styles) and `.env` (providers/models/keys). Templates are editable from the UI and validated by `schemas/configs.py`.
+All behaviour that should change without code lives in `configs/` (templates, caption styles, persona seeds) and `.env` (providers/models/keys). Templates are editable from the UI and validated by `schemas/configs.py`. **Personas** are rows in the `personas` table (`app/personas/repo.py`: get/list/upsert/delete, `seed_personas_from_configs`, `persona_or_config` = DB first then JSON); `Asset.persona_id` and `Project.persona_id` scope the B-roll library, selection (`find_candidates(..., persona_id)`), library summary and project listing to one persona. API: `/personas` CRUD, `?persona=` filters on `/assets`, `/assets/search`, `/projects`, `persona_id` form field on upload.
 
 ## Database
 SQLAlchemy 2.0, Postgres in compose, SQLite in tests. `db.init_db()` creates tables and applies a tiny forward-only column migration (`_ensure_columns`) for fields added after first release. (Alembic is a planned improvement.)

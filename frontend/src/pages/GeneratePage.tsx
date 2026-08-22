@@ -1,9 +1,10 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import { api } from "@/lib/api"
+import { usePersona } from "@/lib/persona"
 import { PageHeader } from "@/components/PageHeader"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -14,20 +15,22 @@ import { cn } from "@/lib/utils"
 export default function GeneratePage() {
   const nav = useNavigate()
   const { data: templates } = useQuery({ queryKey: ["templates"], queryFn: api.templates })
-  const { data: personas } = useQuery({ queryKey: ["personas"], queryFn: api.personas })
+  const { personas, activeId, setActiveId } = usePersona()
   const [templateId, setTemplateId] = useState("story_v1")
   const [topic, setTopic] = useState("")
   const [duration, setDuration] = useState(18)
-  const persona = personas?.[0]
+  const [personaId, setPersonaId] = useState(activeId)
+  useEffect(() => { setPersonaId(activeId) }, [activeId])
+  const persona = personas.find(p => p.id === personaId)
   const tpl = templates?.find(t => t.id === templateId)
 
   const create = useMutation({
     mutationFn: async () => {
-      const p = await api.createProject({ topic: topic.trim(), template_id: templateId, target_duration: duration })
+      const p = await api.createProject({ topic: topic.trim(), template_id: templateId, target_duration: duration, persona_id: personaId })
       await api.action(p.id, "generate")
       return p
     },
-    onSuccess: p => { toast.success("Generation started"); nav(`/projects/${p.id}`) },
+    onSuccess: p => { toast.success("Generation started"); if (personaId !== activeId) setActiveId(personaId); nav(`/projects/${p.id}`) },
     onError: e => toast.error(e.message),
   })
 
@@ -38,6 +41,13 @@ export default function GeneratePage() {
       </PageHeader>
       <div className="grid gap-6 px-8 py-6 lg:grid-cols-[1fr_340px]">
         <form className="space-y-6" onSubmit={e => { e.preventDefault(); if (topic.trim().length >= 3) create.mutate() }}>
+          <div>
+            <Label htmlFor="persona" className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">Persona</Label>
+            <select id="persona" value={personaId} onChange={e => setPersonaId(e.target.value)} className="h-9 w-full max-w-md rounded-md border border-input bg-card px-2 text-sm focus-visible:outline-2 focus-visible:outline-ring">
+              {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">The script is written in this character's voice and B-roll comes from their own library.</p>
+          </div>
           <div>
             <Label className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">Template</Label>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -66,7 +76,7 @@ export default function GeneratePage() {
             <input id="dur" type="range" min={15} max={25} step={1} value={duration} onChange={e => setDuration(Number(e.target.value))} className="scrub w-full" />
             <div className="flex justify-between font-mono text-[11px] text-muted-foreground"><span>15s</span><span>{tpl ? `template max ${tpl.duration.max}s` : ""}</span><span>25s</span></div>
           </div>
-          <Button type="submit" size="lg" disabled={topic.trim().length < 3 || create.isPending}>
+          <Button type="submit" size="lg" disabled={topic.trim().length < 3 || !personaId || create.isPending}>
             <Sparkles className="size-4" /> {create.isPending ? "Starting…" : "Generate video"}
           </Button>
         </form>
@@ -78,7 +88,7 @@ export default function GeneratePage() {
                 <div className="font-heading text-lg font-semibold">{persona.identity?.name ?? persona.name}</div>
                 <p className="text-muted-foreground">{persona.identity?.background ?? persona.audience}</p>
                 <div className="flex flex-wrap gap-1 pt-1">{persona.tone.map(t => <span key={t} className="rounded bg-secondary px-1.5 py-0.5 text-[11px]">{t}</span>)}</div>
-                <p className="pt-1 font-mono text-[11px] text-muted-foreground">voice {persona.voice.provider} · {persona.speech_rate_wps} words/s · closing: template-defined</p>
+                <p className="pt-1 font-mono text-[11px] text-muted-foreground">voice {persona.voice.provider} · {persona.speech_rate_wps} words/s · B-roll assets/{persona.id}/</p>
               </>) : <p className="text-muted-foreground">Loading…</p>}
             </CardContent>
           </Card>

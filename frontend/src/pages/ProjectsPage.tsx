@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { api, fmtDate } from "@/lib/api"
+import { personaLabel, usePersona } from "@/lib/persona"
 import type { Project } from "@/lib/types"
 import { PageHeader } from "@/components/PageHeader"
 import { StatusBadge } from "@/components/StatusBadge"
@@ -17,8 +18,9 @@ export default function ProjectsPage() {
   const qc = useQueryClient()
   const [status, setStatus] = useState("ALL")
   const [tpl, setTpl] = useState("ALL")
+  const { activeId, active } = usePersona()
   const { data, isLoading } = useQuery({
-    queryKey: ["projects"], queryFn: api.projects,
+    queryKey: ["projects", activeId], queryFn: () => api.projects(activeId || undefined), enabled: !!activeId,
     refetchInterval: q => (q.state.data?.some(p => RUNNING.has(p.status)) ? 3000 : 15000),
   })
   const del = useMutation({
@@ -39,7 +41,7 @@ export default function ProjectsPage() {
       <PageHeader eyebrow="Production line" title="Projects"
         actions={<Button onClick={() => nav("/generate")}><Plus className="size-4" /> New video</Button>}>
         <p className="mt-1 text-sm text-muted-foreground">
-          {data?.length ?? 0} projects · {counts.READY ?? 0} ready · {counts.APPROVED ?? 0} approved · {counts.FAILED ?? 0} failed
+          <span className="text-foreground">{personaLabel(active)}</span> · {data?.length ?? 0} projects · {counts.READY ?? 0} ready · {counts.APPROVED ?? 0} approved · {counts.FAILED ?? 0} failed
         </p>
       </PageHeader>
       <div className="flex items-center gap-2 px-8 py-4">

@@ -10,13 +10,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 export default function TemplatesPage() {
   const { data: templates } = useQuery({ queryKey: ["templates"], queryFn: api.templates })
-  const { data: personas } = useQuery({ queryKey: ["personas"], queryFn: api.personas })
   const [editing, setEditing] = useState<Template | "new" | null>(null)
   return (
     <div>
-      <PageHeader eyebrow="Configuration" title="Templates & persona"
+      <PageHeader eyebrow="Configuration" title="Templates"
         actions={<Button onClick={() => setEditing("new")}><Plus className="size-4" /> New template</Button>}>
-        <p className="mt-1 text-sm text-muted-foreground">Templates are editable here (saved to <code className="font-mono">configs/templates/*.json</code>). Persona rules live in <code className="font-mono">configs/personas/</code>.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Templates are editable here (saved to <code className="font-mono">configs/templates/*.json</code>). Personas have their own page.</p>
       </PageHeader>
       <div className="space-y-8 px-8 py-6">
         <section className="grid gap-4 md:grid-cols-2">
@@ -40,25 +39,8 @@ export default function TemplatesPage() {
             </Card>
           ))}
         </section>
-        <section className="grid gap-4 md:grid-cols-2">
-          {(personas ?? []).map(p => (
-            <Card key={p.id}>
-              <CardHeader><CardTitle className="flex items-baseline justify-between font-heading"><span>{p.name}</span><span className="font-mono text-[11px] font-normal text-muted-foreground">{p.id}</span></CardTitle></CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                {p.identity && <p><span className="font-semibold">{p.identity.name}</span>{p.identity.age ? `, ${p.identity.age}` : ""}{p.identity.location ? `, ${p.identity.location}` : ""} — <span className="text-muted-foreground">{p.identity.background}</span></p>}
-                <p className="text-xs text-muted-foreground">Audience: {p.audience}</p>
-                <Row label="pillars" items={p.topics} /><Row label="tone" items={p.tone} /><Row label="never" items={p.avoid} /><Row label="tools" items={p.tools} />
-                <div className="font-mono text-[11px] text-muted-foreground">products: {p.products.length ? p.products.map(x => x.name).join(", ") : "none"} ({p.product_mention_policy}) · voice {p.voice.provider} speed {p.voice.speed} stability {p.voice.stability} · {p.speech_rate_wps} w/s · {p.target_duration}s / max {p.max_duration}s</div>
-              </CardContent>
-            </Card>
-          ))}
-        </section>
       </div>
       <TemplateEditor template={editing} onClose={() => setEditing(null)} />
     </div>
   )
-}
-function Row({ label, items }: { label: string; items: string[] }) {
-  if (!items?.length) return null
-  return <div className="flex flex-wrap items-baseline gap-1"><span className="mr-1 font-mono text-[11px] text-primary">{label}</span>{items.map(i => <span key={i} className="rounded bg-secondary px-1.5 py-0.5 text-[11px]">{i}</span>)}</div>
 }

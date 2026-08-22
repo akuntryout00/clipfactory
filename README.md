@@ -16,7 +16,7 @@ ClipFactory is a self-hosted content pipeline you run on your own machine (Docke
 ## Requirements
 
 - Docker Desktop (or Docker Engine + Compose v2)
-- **Your own B-roll clips** (vertical, any codec ffmpeg reads) placed under `assets/<category>/…` — ClipFactory ships no footage; the content factory needs at least a handful of approved clips to select from (see “B-roll library” below).
+- **Your own B-roll clips** (vertical, any codec ffmpeg reads) placed under `assets/<persona>/<category>/…` — ClipFactory ships no footage; the content factory needs at least a handful of approved clips to select from (see “B-roll library” below).
 - API keys for the providers you want to use (see table). Nothing works without an LLM key + a voice key for the content factory; the AI Lab additionally needs an image provider and a video provider.
 
 | Feature | Provider | Env var(s) |
@@ -44,7 +44,7 @@ The web UI at **http://localhost:3000** covers everything: Projects, Generate, p
 
 ## B-roll library
 
-- Put clips in `assets/<category>/name.mp4` (or upload them one by one in the UI with **Add video** — AI autocomplete fills description/tags/action/location/shot/mood from sampled frames).
+- Put clips in `assets/<persona>/<category>/name.mp4` — every clip belongs to one persona, and only that persona's projects can use it (or upload them one by one in the UI with **Add video**, choosing the persona — AI autocomplete fills description/tags/action/location/shot/mood from sampled frames).
 - `make import` reads technical metadata with ffprobe; semantic metadata comes from `assets/broll_database.json` if present (id/file/description/tags/shot), otherwise heuristics + **Enrich with AI**.
 - Clips must be **approved** to be selectable (seeded clips are approved; uploaded clips default to whatever you choose).
 - The scene planner is library-aware: it only plans visuals your footage can cover; the ranker receives the whole catalog when it is small (≤60 clips).
@@ -62,7 +62,7 @@ The web UI at **http://localhost:3000** covers everything: Projects, Generate, p
 
 ## Configuration (no code changes needed)
 
-- `configs/personas/*.json` — who is speaking: identity, audience, content pillars, tone, things to avoid, tools they really use, product-mention policy, voice settings, measured speech rate. `DEFAULT_PERSONA` selects one. The shipped personas are examples — write your own.
+- **Personas live in the database** and are edited in the UI (**Personas** page: identity name/age/location/background, audience, content pillars, tone, things to avoid, tools, product-mention policy, closing style, voice settings, measured speech rate). `configs/personas/*.json` are only seeds — they are inserted on first start if the table is empty, and the shipped ones are examples. Projects and B-roll are scoped per persona: the sidebar switcher selects the active persona; Generate lets you pick one per video. `DEFAULT_PERSONA` is the fallback for the CLI and legacy imports. `clipfactory assets migrate-personas --to <id>` moves a pre-persona `assets/<category>/` library under `assets/<id>/`.
 - `configs/templates/*.json` — video structures (sections + weights, duration, shot length, overlays, closing rule, caption style, music category). Editable in the UI (Templates).
 - `configs/captions/*.json` — caption style (font, size, colours, safe zones, chunking, animation).
 - `storage/music/<category>_NN.mp3` — optional royalty-free music; mixed at −20 dB with ducking under the voice.

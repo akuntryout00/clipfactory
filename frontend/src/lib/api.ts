@@ -21,7 +21,10 @@ export const api = {
   updateTemplate: (t: Template) => req<Template>(`/templates/${t.id}`, { method: "PUT", body: JSON.stringify(t) }),
   deleteTemplate: (id: string) => req<void>(`/templates/${id}`, { method: "DELETE" }),
   personas: () => req<Persona[]>("/personas"),
-  projects: () => req<Project[]>("/projects"),
+  createPersona: (p: Persona) => req<Persona>("/personas", { method: "POST", body: JSON.stringify(p) }),
+  updatePersona: (p: Persona) => req<Persona>(`/personas/${p.id}`, { method: "PUT", body: JSON.stringify(p) }),
+  deletePersona: (id: string) => req<void>(`/personas/${id}`, { method: "DELETE" }),
+  projects: (persona?: string) => req<Project[]>(`/projects${persona ? `?persona=${encodeURIComponent(persona)}` : ""}`),
   project: (id: string) => req<Project>(`/projects/${id}`),
   createProject: (body: { topic: string; template_id: string; target_duration?: number; persona_id?: string }) =>
     req<Project>("/projects", { method: "POST", body: JSON.stringify(body) }),
@@ -34,8 +37,8 @@ export const api = {
   suggestions: (id: string, order: number) => req<Candidate[]>(`/projects/${id}/scenes/${order}/suggestions`),
   setSceneAsset: (id: string, order: number, asset_id: string) =>
     req<unknown>(`/projects/${id}/scenes/${order}/asset`, { method: "POST", body: JSON.stringify({ asset_id }) }),
-  assets: () => req<Asset[]>("/assets"),
-  searchAssets: (q: string) => req<Candidate[]>(`/assets/search?q=${encodeURIComponent(q)}&limit=30`),
+  assets: (persona?: string) => req<Asset[]>(`/assets${persona ? `?persona=${encodeURIComponent(persona)}` : ""}`),
+  searchAssets: (q: string, persona?: string) => req<Candidate[]>(`/assets/search?q=${encodeURIComponent(q)}&limit=30${persona ? `&persona=${encodeURIComponent(persona)}` : ""}`),
   patchAsset: (id: string, patch: Partial<Asset>) => req<Asset>(`/assets/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   analyzeAsset: async (file: File) => {
     const fd = new FormData(); fd.append("file", file)
