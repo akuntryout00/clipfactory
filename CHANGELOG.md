@@ -3,6 +3,8 @@
 All notable changes are documented here. Format: Keep a Changelog · SemVer.
 
 ## [Unreleased]
+
+## [0.2.0] — 2026-08-22
 ### Added
 - **AI B-roll** module: describe a shot (or open it from the shot list with *Create with AI* — everything prefilled), pick a video model (fal.ai Seedance/MiniMax/Kling, Omni, Veo) and length, optionally keep the persona's real face (identity-preserving high-quality start frame + face-lock motion prompt), generate → the clip is normalized to 1080×1920 and added to the persona's library as an approved, tagged asset assigned to that shot. Persona photo upload/replace/remove; cost estimate; job list with retry/delete. API `/ai-broll/*`.
 - Plug-and-play first run: `docker compose up` works without `.env`; a **Setup** page asks for the provider keys (OpenAI, ElevenLabs with voice picker, optional Google / fal.ai), tests the connections and stores them in the database (overriding `.env`); the app redirects to Setup until the required providers are configured; Settings page to change them later; offline dry-run mode with fake providers. API `GET/PUT /settings/providers`, `POST /settings/providers/test`; `/system` reports `setup_required`.

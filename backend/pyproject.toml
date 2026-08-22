@@ -1,6 +1,6 @@
 [project]
 name = "clipfactory"
-version = "0.1.0"
+version = "0.2.0"
 description = "ClipFactory — topic + template -> short-form vertical MP4 (TikTok/Reels/Shorts) from your own B-roll, plus an AI Lab for fully generated clips"
 license = { text = "Elastic-2.0" }
 authors = [{ name = "Feyzili Mikayil" }]

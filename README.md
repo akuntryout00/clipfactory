@@ -31,7 +31,7 @@ ClipFactory is a self-hosted content pipeline you run on your own machine (Docke
 ## Quick start
 
 ```bash
-git clone https://github.com/<you>/clipfactory.git && cd clipfactory
+git clone https://github.com/feyzilim/clipfactory.git && cd clipfactory
 docker compose up -d           # builds db + api + web on first run → open http://localhost:3000
 ```
 

@@ -54,7 +54,7 @@ def create_app(
         app.state.jobs.shutdown()
         app.state.lab_jobs.shutdown()
 
-    app = FastAPI(title="ClipFactory", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="ClipFactory", version="0.2.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Range", "Accept-Ranges"]
     )
