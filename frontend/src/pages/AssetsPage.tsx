@@ -19,7 +19,8 @@ import { useConfirm } from "@/components/ConfirmDialog"
 export default function AssetsPage() {
   const qc = useQueryClient()
   const { activeId, active, personas } = usePersona()
-  const { data, isLoading } = useQuery({ queryKey: ["assets", activeId], queryFn: () => api.assets(activeId || undefined), enabled: !!activeId })
+  const [kind, setKind] = useState<"video" | "image">("video")
+  const { data, isLoading } = useQuery({ queryKey: ["assets", activeId, kind], queryFn: () => api.assets(activeId || undefined, kind), enabled: !!activeId })
   const [q, setQ] = useState("")
   const [cat, setCat] = useState("ALL")
   const [edit, setEdit] = useState<Asset | null>(null)
@@ -37,15 +38,21 @@ export default function AssetsPage() {
 
   return (
     <div>
-      <PageHeader eyebrow="Asset library" title="B-roll"
+      <PageHeader eyebrow="Asset library" title={kind === "image" ? "Photos" : "B-roll"}
         actions={<>
-          <Button size="sm" onClick={() => setAdding(true)}><Upload className="size-4" /> Add video</Button>
+          <Button size="sm" onClick={() => setAdding(true)}><Upload className="size-4" /> {kind === "image" ? "Add photo" : "Add video"}</Button>
           <Button variant="outline" size="sm" onClick={() => imp.mutate()} disabled={imp.isPending}><FolderInput className="size-4" /> {imp.isPending ? "Importing…" : "Import folder"}</Button>
           <Button variant="outline" size="sm" onClick={() => enrich.mutate()} disabled={enrich.isPending}><Sparkles className="size-4" /> {enrich.isPending ? "Enriching…" : "Enrich with AI"}</Button>
         </>}>
         <p className="mt-1 text-sm text-muted-foreground"><span className="text-foreground">{personaLabel(active)}</span> · {data?.length ?? 0} clips · {approved} approved · drop new files into <code className="font-mono">assets/{activeId || "<persona>"}/&lt;category&gt;/</code> then Import.</p>
       </PageHeader>
-      <ShotlistPanel personaId={activeId} selectedItem={shotItem} onSelectItem={setShotItem} />
+      <div className="flex items-center gap-1 px-8 pt-4">
+        {(["video", "image"] as const).map(k => (
+          <button key={k} type="button" onClick={() => { setKind(k); setCat("ALL"); setShotItem(null) }} className={cn("rounded-md border px-3 py-1.5 text-sm", kind === k ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground")}>{k === "video" ? "Videos (B-roll)" : "Photos (slideshows)"}</button>
+        ))}
+        <span className="ml-2 text-[11px] text-muted-foreground">{kind === "image" ? "Photos are used by the Slideshow template: one bold line of text per photo." : "Clips are used by the video templates."}</span>
+      </div>
+      {kind === "video" && <ShotlistPanel personaId={activeId} selectedItem={shotItem} onSelectItem={setShotItem} />}
       <div className="flex flex-wrap items-center gap-2 px-8 py-4">
         <Input placeholder="Search id, tags, description…" value={q} onChange={e => setQ(e.target.value)} className="h-8 w-72" />
         <div className="flex gap-1">
@@ -62,7 +69,7 @@ export default function AssetsPage() {
             <div className="relative aspect-[9/16] overflow-hidden rounded bg-surface-2">
               <img src={media.assetThumb(a.id)} alt="" loading="lazy" className="h-full w-full object-cover" />
               <span className="absolute left-1 top-1 rounded bg-background/80 px-1 font-mono text-[10px]">{a.id.replace("asset_", "#")}</span>
-              <span className="absolute right-1 top-1 rounded bg-background/80 px-1 font-mono text-[10px]">{a.duration.toFixed(1)}s</span>
+              <span className="absolute right-1 top-1 rounded bg-background/80 px-1 font-mono text-[10px]">{a.kind === "image" ? `${a.width ?? "?"}×${a.height ?? "?"}` : `${a.duration.toFixed(1)}s`}</span>
               {!a.approved && <span className="absolute bottom-1 left-1 rounded bg-fail/80 px-1 font-mono text-[10px] text-background">not approved</span>}
               {a.usage_count > 0 && <span className="absolute bottom-1 right-1 rounded bg-background/80 px-1 font-mono text-[10px]">×{a.usage_count}</span>}
             </div>
@@ -128,19 +135,21 @@ function UploadDialog({ open, onClose, categories, personas, defaultPersona }: {
     <Dialog open={open} onOpenChange={o => { if (!o) { reset(); onClose() } }}>
       <DialogContent className="sm:max-w-4xl">
         <DialogHeader><DialogTitle className="font-heading">Add a B-roll clip</DialogTitle></DialogHeader>
-        <form className="grid gap-4 md:grid-cols-[300px_1fr]" onSubmit={e => { e.preventDefault(); if (file && cat) up.mutate() }}>
+        <form noValidate className="grid gap-4 md:grid-cols-[300px_1fr]" onSubmit={e => { e.preventDefault(); if (file && cat) up.mutate() }}>
           <div>
-            {previewUrl ? (
+            {previewUrl && file?.type.startsWith("image/") ? (
+              <img src={previewUrl} alt="" className="max-h-72 w-full rounded-md border border-border object-contain" />
+            ) : previewUrl ? (
               <RangeTrimmer src={previewUrl} duration={range?.dur ?? 0} start={range?.s ?? 0} end={range?.e ?? 0}
                 onChange={(s, e) => setRange(r => ({ s, e, dur: r?.dur ?? e }))} />
             ) : (
               <label className="block aspect-[9/16] cursor-pointer overflow-hidden rounded-md border border-dashed border-border bg-surface-2 hover:border-primary">
                 <span className="grid h-full place-items-center p-4 text-center text-xs text-muted-foreground">Click to choose a video<br />(.mp4 / .mov, vertical 9:16 preferred)</span>
-                <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" className="sr-only" onChange={e => pickFile(e.target.files?.[0] ?? null)} />
+                <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v,image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" className="sr-only" onChange={e => pickFile(e.target.files?.[0] ?? null)} />
               </label>
             )}
             {/* hidden probe to learn the duration and seed the range to whole clip minus small margins */}
-            {previewUrl && !range && <video src={previewUrl} className="hidden" preload="metadata"
+            {previewUrl && !range && !file?.type.startsWith("image/") && <video src={previewUrl} className="hidden" preload="metadata"
               onLoadedMetadata={e => { const d = e.currentTarget.duration; const m = Math.min(0.2, d * 0.05); setRange({ s: Math.round(m * 20) / 20, e: Math.round((d - m) * 20) / 20, dur: d }) }} />}
             {file && <div className="mt-1 flex items-center justify-between gap-2 font-mono text-[11px] text-muted-foreground">
               <span className="truncate">{file.name} · {(file.size / 1e6).toFixed(1)} MB</span>
@@ -229,11 +238,15 @@ function AssetDialog({ asset, onClose }: { asset: Asset | null; onClose: () => v
           <DialogHeader><DialogTitle className="font-heading">{a.id} <span className="font-mono text-sm font-normal text-muted-foreground">{a.file}</span></DialogTitle></DialogHeader>
           <div className="grid gap-5 md:grid-cols-[300px_1fr]">
             <div className="space-y-2">
-              <RangeTrimmer src={media.assetFile(a.id)} duration={a.duration} start={a.usable_start} end={a.usable_end}
-                onChange={(s, e) => setForm(f => ({ ...f, usable_start: s, usable_end: e }))} />
-              <div className="font-mono text-[11px] text-muted-foreground">{a.width}×{a.height} · {a.fps?.toFixed(2)} fps · {a.duration.toFixed(2)}s · used ×{a.usage_count}</div>
+              {a.kind === "image" ? (
+                <img src={media.assetFile(a.id)} alt="" className="w-full rounded-md border border-border object-contain" />
+              ) : (
+                <RangeTrimmer src={media.assetFile(a.id)} duration={a.duration} start={a.usable_start} end={a.usable_end}
+                  onChange={(s, e) => setForm(f => ({ ...f, usable_start: s, usable_end: e }))} />
+              )}
+              <div className="font-mono text-[11px] text-muted-foreground">{a.width}×{a.height}{a.kind === "image" ? " · photo" : ` · ${a.fps?.toFixed(2)} fps · ${a.duration.toFixed(2)}s`} · used ×{a.usage_count}</div>
             </div>
-            <form className="grid grid-cols-2 content-start gap-3 text-sm" onSubmit={e => { e.preventDefault(); save.mutate() }}>
+            <form noValidate className="grid grid-cols-2 content-start gap-3 text-sm" onSubmit={e => { e.preventDefault(); save.mutate() }}>
               <div className="col-span-2"><Label className="text-xs text-muted-foreground">Description</Label><Textarea rows={2} value={a.description ?? ""} onChange={e => set("description", e.target.value)} /></div>
               <div className="col-span-2"><Label className="text-xs text-muted-foreground">Tags (comma separated)</Label><Input value={(a.tags ?? []).join(", ")} onChange={e => set("tags", e.target.value.split(",").map(s => s.trim()).filter(Boolean))} /></div>
               <div><Label className="text-xs text-muted-foreground">Action</Label><Input value={a.action ?? ""} onChange={e => set("action", e.target.value)} /></div>
@@ -250,8 +263,8 @@ function AssetDialog({ asset, onClose }: { asset: Asset | null; onClose: () => v
                 <ShotlistItemSelect personaId={a.persona_id ?? ""} value={a.shotlist_item_id} onChange={v => set("shotlist_item_id", v)} /></div>
               <div><Label className="text-xs text-muted-foreground">Quality (0–1)</Label><Input type="number" step="0.05" min={0} max={1} value={a.quality_score} onChange={e => set("quality_score", Number(e.target.value))} /></div>
               <div className="flex items-end gap-2"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={a.approved} onChange={e => set("approved", e.target.checked)} className="scrub size-4" /> Approved for use</label></div>
-              <div><Label className="text-xs text-muted-foreground">Usable start (s) — drag the left handle or type</Label><Input type="number" step="0.05" min={0} max={a.duration} value={a.usable_start} onChange={e => set("usable_start", Number(e.target.value))} /></div>
-              <div><Label className="text-xs text-muted-foreground">Usable end (s)</Label><Input type="number" step="0.05" min={0} max={a.duration} value={a.usable_end} onChange={e => set("usable_end", Number(e.target.value))} /></div>
+              {a.kind !== "image" && <><div><Label className="text-xs text-muted-foreground">Usable start (s) — drag the left handle or type</Label><Input type="number" step="0.05" min={0} max={a.duration} value={a.usable_start} onChange={e => set("usable_start", Number(e.target.value))} /></div>
+              <div><Label className="text-xs text-muted-foreground">Usable end (s)</Label><Input type="number" step="0.05" min={0} max={a.duration} value={a.usable_end} onChange={e => set("usable_end", Number(e.target.value))} /></div></>}
               <div className="col-span-2 flex items-center gap-2 pt-2">
                 <Button type="button" variant="ghost" className="text-fail hover:text-fail" disabled={del.isPending}
                   onClick={async () => { if (await confirm({ title: "Delete this clip?", subject: `${a.id} · ${a.file}`, description: "Removed from the library and from disk. Videos already rendered with it are not affected.", confirmLabel: "Delete clip" })) del.mutate() }}>

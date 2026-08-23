@@ -112,7 +112,7 @@ function NewVideoDialog({ open, onClose }: { open: boolean; onClose: () => void 
           <DialogTitle className="font-heading">New AI video</DialogTitle>
           <DialogDescription>Write what should happen, pick a model and a length. You'll review the keyframes before animation.</DialogDescription>
         </DialogHeader>
-        <form className="space-y-4" onSubmit={e => { e.preventDefault(); if (prompt.trim().length >= 5) create.mutate() }}>
+        <form noValidate className="space-y-4" onSubmit={e => { e.preventDefault(); if (prompt.trim().length >= 5) create.mutate() }}>
           <div>
             <Label htmlFor="lp" className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">1 · What video do you want?</Label>
             <Textarea id="lp" rows={9} autoFocus value={prompt} onChange={e => setPrompt(e.target.value)} className="min-h-[200px] resize-none text-[15px] leading-relaxed"

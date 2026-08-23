@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Protocol
 
 from app.config.settings import get_settings
-from app.lab.schemas import KeyframePlan, KeyframeSpec
+from app.lab.schemas import KeyframePlan, KeyframeSpec, ShotPlan, ShotSpec
 
 log = logging.getLogger(__name__)
 W, H = 1080, 1920
@@ -21,6 +21,42 @@ W, H = 1080, 1920
 
 class Planner(Protocol):
     def plan(self, *, prompt: str, n_keyframes: int, segment_seconds: int, style: str | None) -> KeyframePlan: ...
+
+    def plan_shots(self, *, prompt: str, target_seconds: float, min_clip: int, max_clip: int, style: str | None) -> ShotPlan: ...
+
+
+SHOTS_SYSTEM = (
+    "You are a director + storyboard artist for vertical (9:16) AI-generated short videos. The video is built from SHOTS: each shot "
+    "is one clip a video model animates from a START frame to an END frame. YOU decide the shots from the story — how many, how "
+    "long each, and where the camera cuts — not a fixed grid.\n"
+    "Rules:\n"
+    "- Break the idea into beats; give each beat a shot with its own length (quick beats 3-5 s, slow reveals or time-lapses longer), "
+    "all within the allowed clip range; the lengths must add up to the target (±1 s per shot is fine).\n"
+    "- transition='cut' starts a new composition (new start frame); 'continuous' keeps the camera rolling from the previous shot's "
+    "end frame (the start_prompt is then ignored). Use cuts for new angles/places, continuous for an unbroken move.\n"
+    "- Start/end frames of a shot must be plausible to interpolate in its seconds: same place and characters, a clear but modest "
+    "change (push-in, subject moves, light shifts). Describe subject, action/pose, setting, light, lens, angle; repeat identity "
+    "details; say 'vertical 9:16 composition'. No text, logos, split screens.\n"
+    "- First write a style_guide that keeps characters, wardrobe, palette, lens and rendering consistent across ALL frames.\n"
+    "Output JSON only."
+)
+
+
+def _normalise_shots(plan: ShotPlan, target: float, min_clip: int, max_clip: int) -> ShotPlan:
+    shots = plan.shots[:12] or []
+    if not shots:
+        raise RuntimeError("planner returned no shots")
+    for i, sh in enumerate(shots):
+        sh.index = i
+        sh.seconds = max(min_clip, min(max_clip, int(round(sh.seconds or min_clip))))
+        sh.transition = "continuous" if (i > 0 and str(sh.transition).lower().startswith("cont")) else "cut"
+    total = sum(sh.seconds for sh in shots)
+    if total and abs(total - target) > max(2, 0.2 * target):  # rescale only when clearly off target
+        scale = target / total
+        for sh in shots:
+            sh.seconds = max(min_clip, min(max_clip, int(round(sh.seconds * scale))))
+    plan.shots = shots
+    return plan
 
 
 PLAN_SYSTEM = (
@@ -74,9 +110,45 @@ class OpenAIPlanner:
             plan.keyframes.append(KeyframeSpec(index=len(plan.keyframes), prompt=last.prompt, caption=last.caption))
         return plan
 
+    def plan_shots(self, *, prompt: str, target_seconds: float, min_clip: int, max_clip: int, style: str | None) -> ShotPlan:
+        user = (
+            f"IDEA: {prompt}\nSTYLE PREFERENCE: {style or 'cinematic, realistic'}\n"
+            f"TARGET LENGTH: {target_seconds:.0f} seconds total. Each shot must be {min_clip}-{max_clip} seconds. "
+            "Decide the number of shots from the story (typically 2-6)."
+        )
+        kwargs = dict(
+            model=self.model,
+            messages=[{"role": "system", "content": SHOTS_SYSTEM}, {"role": "user", "content": user}],
+            response_format=ShotPlan,
+        )
+        if not self.model.startswith(("o1", "o3", "o4", "gpt-5")):
+            kwargs["temperature"] = 0.7
+        msg = self._client.chat.completions.parse(**kwargs).choices[0].message
+        if msg.parsed is None:
+            raise RuntimeError(msg.refusal or "planner returned nothing")
+        return _normalise_shots(msg.parsed, target_seconds, min_clip, max_clip)
+
 
 class FakePlanner:
     name = "fake"
+
+    def plan_shots(self, *, prompt: str, target_seconds: float, min_clip: int, max_clip: int, style: str | None) -> ShotPlan:
+        from app.lab.planning import segment_plan
+
+        n, seg = segment_plan(target_seconds, max_seg=max_clip, min_seg=min_clip)
+        shots = [
+            ShotSpec(
+                index=i,
+                title=f"Beat {i + 1}",
+                seconds=seg,
+                transition="cut" if i % 2 == 0 else "continuous",
+                start_prompt=f"{prompt} — shot {i + 1} start, vertical 9:16",
+                end_prompt=f"{prompt} — shot {i + 1} end, vertical 9:16",
+                motion="slow push-in" if i % 2 == 0 else "gentle pan",
+            )
+            for i in range(n)
+        ]
+        return _normalise_shots(ShotPlan(style_guide=f"fake style for: {prompt[:40]}", shots=shots), target_seconds, min_clip, max_clip)
 
     def plan(self, *, prompt: str, n_keyframes: int, segment_seconds: int, style: str | None) -> KeyframePlan:
         return KeyframePlan(

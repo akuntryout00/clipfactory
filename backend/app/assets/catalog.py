@@ -18,7 +18,7 @@ def candidate_limit_for(n_approved: int) -> int:
 
 
 def library_summary(session: Session, max_listing: int = SMALL_LIBRARY, persona_id: str | None = None) -> str:
-    q = select(Asset).where(Asset.approved.is_(True)).order_by(Asset.id)
+    q = select(Asset).where(Asset.approved.is_(True), Asset.kind == "video").order_by(Asset.id)
     if persona_id:
         q = q.where(Asset.persona_id == persona_id)
     assets = list(session.execute(q).scalars())

@@ -3,15 +3,15 @@ import { STAGES, type ProjectStatus } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 /** The PRD §22 generation states, drawn as a production line. Order is real: each stage feeds the next. */
-export function StageTimeline({ status, error, message }: { status: ProjectStatus; error?: string | null; message?: string | null }) {
-  const idx = STAGES.findIndex(s => s.key === status)
+export function StageTimeline({ status, error, message, stages = STAGES }: { status: ProjectStatus; error?: string | null; message?: string | null; stages?: { key: ProjectStatus; label: string }[] }) {
+  const idx = stages.findIndex(s => s.key === status)
   const done = status === "READY" || status === "APPROVED"
   const failedStage = status === "FAILED" ? (error?.split(":")[0] ?? "") : ""
-  const failIdx = { script: 0, voice: 1, plan: 2, render: 5 }[failedStage as "script"] ?? -1
+  const failIdx = stages === STAGES ? ({ script: 0, voice: 1, plan: 2, render: 5 }[failedStage as "script"] ?? -1) : ({ script: 0, plan: 1, render: 2 }[failedStage as "script"] ?? -1)
   return (
     <div>
       <ol className="flex items-center gap-1">
-        {STAGES.map((s, i) => {
+        {stages.map((s, i) => {
           const state = done ? "done" : status === "FAILED" ? (i < failIdx ? "done" : i === failIdx ? "fail" : "todo")
             : status === "DRAFT" ? "todo" : i < idx ? "done" : i === idx ? "active" : "todo"
           return (
@@ -26,7 +26,7 @@ export function StageTimeline({ status, error, message }: { status: ProjectStatu
                 </span>
                 <span className={cn("text-[10px] uppercase tracking-wider", state === "todo" ? "text-muted-foreground" : "text-foreground")}>{s.label}</span>
               </div>
-              {i < STAGES.length - 1 && <span className={cn("mb-4 h-px flex-1", state === "done" ? "bg-ready/40" : "bg-border")} />}
+              {i < stages.length - 1 && <span className={cn("mb-4 h-px flex-1", state === "done" ? "bg-ready/40" : "bg-border")} />}
             </li>
           )
         })}

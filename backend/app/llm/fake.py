@@ -18,8 +18,14 @@ from app.schemas.pipeline import (
     ShotlistItemOut,
     ShotlistMatchOutput,
     ShotlistOutput,
+    SlideshowScript,
+    SlideSpec,
     TopicIdea,
     TopicIdeasOutput,
+    TrendAnalysisOutput,
+    TrendHook,
+    TrendSection,
+    TrendTemplateProposal,
     WordTiming,
 )
 
@@ -223,6 +229,69 @@ class FakeLLM:
                 )
             out.append(ShotlistAssignment(asset_id=a["asset_id"], item_index=idx))
         return ShotlistMatchOutput(assignments=out)
+
+    def generate_slides(
+        self, *, persona: PersonaConfig, template: TemplateConfig, topic: str, n_slides: int, photo_tags: list[str]
+    ) -> SlideshowScript:
+        tags = photo_tags or ["desk", "cafe", "phone"]
+        slides = [
+            SlideSpec(
+                index=i,
+                text=(
+                    f"Things nobody tells you about {topic}"
+                    if i == 0
+                    else f"Slide {i}: {topic} idea {i}"
+                    if i < n_slides - 1
+                    else "And that's the whole trick."
+                ),
+                photo_intent=f"photo for slide {i}",
+                query_tags=[tags[i % len(tags)]],
+                seconds=3.0 if i == 0 else 2.5,
+            )
+            for i in range(n_slides)
+        ]
+        return SlideshowScript(title=f"Slideshow: {topic[:40]}", slides=slides, post_caption=f"{topic} — save this.")
+
+    def analyze_trend(
+        self, *, persona: PersonaConfig, meta: dict, transcript: str | None, frames: list[bytes], template_ids: list[str]
+    ) -> TrendAnalysisOutput:
+        dur = float(meta.get("duration") or 18.0)
+        secs = [
+            TrendSection(label="hook", start=0, end=round(dur * 0.15, 1), purpose="Pattern interrupt"),
+            TrendSection(label="body", start=round(dur * 0.15, 1), end=round(dur * 0.85, 1), purpose="The substance"),
+            TrendSection(label="payoff", start=round(dur * 0.85, 1), end=round(dur, 1), purpose="Close"),
+        ]
+        tid = "trend_remix_v1"
+        n = 2
+        while tid in template_ids:
+            tid, n = f"trend_remix_v{n}", n + 1
+        return TrendAnalysisOutput(
+            summary=f"Fake analysis of {meta.get('title') or 'video'} ({dur:.0f}s).",
+            hook=TrendHook(text=(transcript or "…").split(".")[0][:80], type="bold claim", seconds=2.0),
+            structure=secs,
+            pacing="fast cuts every ~2 s",
+            visual_style="handheld, face on camera",
+            caption_style="big centered captions",
+            audio="voice-over with trend sound",
+            why_it_works=["curiosity gap", "fast pacing"],
+            tips_for_persona=[f"Use {persona.topics[0]} as the subject", "Open with the result"],
+            remix_ideas=["Why I stopped X", "3 things about Y"],
+            template_proposal=TrendTemplateProposal(
+                id=tid,
+                name="Trend remix",
+                description="Structure copied from an analysed video",
+                duration_min=15,
+                duration_target=18,
+                duration_max=22,
+                sections=secs,
+                voiceover=True,
+                closing="End on the payoff line, no CTA.",
+                shot_min=1.5,
+                shot_max=3.5,
+                overlays_min=1,
+                overlays_max=3,
+            ),
+        )
 
     def draft_persona(self, *, name: str, age: int | None, location: str | None, language: str, about: str) -> PersonaDraft:
         role = about.strip().split(".")[0][:40] or "Creator"

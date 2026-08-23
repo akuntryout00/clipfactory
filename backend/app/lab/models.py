@@ -75,6 +75,8 @@ class LabSegment(Base):
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="PENDING")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)  # planned clip length (content-driven storyboard)
+    transition: Mapped[str | None] = mapped_column(String(16), nullable=True)  # cut | continuous
     provider_ref: Mapped[str | None] = mapped_column(String(256), nullable=True)  # e.g. Omni interaction id (for conversational edits)
     last_edit: Mapped[str | None] = mapped_column(Text, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=0)

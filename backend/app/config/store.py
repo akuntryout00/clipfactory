@@ -29,6 +29,8 @@ FIELDS: dict[str, tuple[str, bool]] = {
     "fal_key": ("FAL_KEY", True),
     "lab_video_provider": ("LAB_VIDEO_PROVIDER", False),
     "openai_image_model": ("OPENAI_IMAGE_MODEL", False),
+    "telegram_bot_token": ("TELEGRAM_BOT_TOKEN", True),
+    "public_base_url": ("PUBLIC_BASE_URL", False),
 }
 _applied: set[str] = set()  # env vars we exported, so we can undo when a value is cleared
 
@@ -153,6 +155,16 @@ def test_provider(name: str, values: dict[str, str] | None = None) -> dict:
             client = genai.Client(api_key=key)
             next(iter(client.models.list(config={"page_size": 1})), None)
             return {"ok": True, "message": "Google AI OK"}
+        if name == "telegram":
+            import httpx
+
+            key = pick("telegram_bot_token")
+            if not key:
+                return {"ok": False, "message": "no bot token"}
+            r = httpx.get(f"https://api.telegram.org/bot{key}/getMe", timeout=10).json()
+            if not r.get("ok"):
+                return {"ok": False, "message": f"Telegram rejected the token: {r.get('description', r)}"}
+            return {"ok": True, "message": f"Telegram OK · bot @{r['result'].get('username')}"}
         if name == "fal":
             import httpx
 

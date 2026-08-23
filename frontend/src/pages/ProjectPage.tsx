@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Check, Download, RefreshCw, Repeat, Shuffle, Type, Wand2 } from "lucide-react"
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Download, RefreshCw, Repeat, Send, Shuffle, Type, Wand2 } from "lucide-react"
 import { toast } from "sonner"
-import { api, fmtDate, fmtTime, media } from "@/lib/api"
+import { API, api, delivery, fmtDate, fmtTime, media } from "@/lib/api"
 import type { Candidate, CaptionOverrides, Project } from "@/lib/types"
 import { CaptionSettingsForm, applyCaptionOverrides } from "@/components/CaptionSettingsForm"
 import { PageHeader } from "@/components/PageHeader"
 import { StatusBadge } from "@/components/StatusBadge"
 import { StageTimeline } from "@/components/StageTimeline"
+import { SLIDESHOW_STAGES } from "@/lib/types"
 import { Timeline } from "@/components/Timeline"
 import { Thumb } from "@/components/Thumb"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -43,6 +44,7 @@ export default function ProjectPage() {
     onError: e => toast.error(e.message),
   })
   const approve = useMutation({ mutationFn: () => api.approve(id), onSuccess: () => { toast.success("Approved"); refresh() }, onError: e => toast.error(e.message) })
+  const sendTg = useMutation({ mutationFn: () => delivery.sendTelegram(id), onSuccess: r => { toast.success(`Sent to Telegram (${r.sent.join(", ")})`); refresh() }, onError: e => toast.error(e.message) })
   const setAsset = useMutation({
     mutationFn: ({ order, asset_id }: { order: number; asset_id: string }) => api.setSceneAsset(id, order, asset_id),
     onSuccess: () => { toast.success("Re-rendering with the new clip"); setChangeScene(null); refresh() },
@@ -63,13 +65,14 @@ export default function ProjectPage() {
           <Button variant="outline" size="sm" disabled={running} onClick={() => setCaptionsOpen(true)} title="Font & position of captions for this project"><Type className="size-4" /> Captions{p.caption_overrides ? " *" : ""}</Button>
           {p.status === "FAILED" && <Button variant="outline" size="sm" onClick={() => act.mutate("retry")}><RefreshCw className="size-4" /> Retry</Button>}
           {p.status === "DRAFT" && <Button size="sm" onClick={() => act.mutate("generate")}>Generate</Button>}
+          {(p.status === "READY" || p.status === "APPROVED") && <Button variant="outline" size="sm" disabled={sendTg.isPending} onClick={() => sendTg.mutate()} title="Send the file to this persona's Telegram chat"><Send className="size-4" /> {sendTg.isPending ? "Sending…" : "Telegram"}</Button>}
           <Button size="sm" disabled={p.status !== "READY"} onClick={() => approve.mutate()}><Check className="size-4" /> {p.status === "APPROVED" ? "Approved" : "Approve"}</Button>
         </>}>
         <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <StatusBadge status={p.status} />
           <span className="font-mono">{p.id}</span>
           <span className="font-mono">{p.template_id}</span>
-          <span>{p.actual_duration ? `${p.actual_duration.toFixed(1)}s voice` : `${p.target_duration}s target`}</span>
+          <span>{p.actual_duration ? `${p.actual_duration.toFixed(1)}s ${p.kind === "slideshow" ? "slideshow" : "voice"}` : `${p.target_duration}s target`}</span>
           <span className="font-mono">s{p.script_version} · v{p.voice_version} · p{p.plan_version} · r{p.render_version}</span>
           <span>{fmtDate(p.created_at)}</span>
         </div>
@@ -79,7 +82,7 @@ export default function ProjectPage() {
         {/* player */}
         <div className="space-y-3">
           <div className="aspect-[9/16] w-full overflow-hidden rounded-lg border border-border bg-black">
-            {videoSrc ? (
+            {p.kind === "slideshow" ? (<SlideGallery p={p} />) : videoSrc ? (
               <video key={videoSrc} ref={videoRef} src={videoSrc} controls playsInline className="h-full w-full"
                 onTimeUpdate={e => setT(e.currentTarget.currentTime)} />
             ) : (
@@ -93,7 +96,7 @@ export default function ProjectPage() {
               <a href={videoSrc} download={`${p.id}.mp4`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "flex-1")}><Download className="size-4" /> Download MP4</a>
             </div>
           )}
-          {p.voice_version > 0 && (
+          {p.voice_version > 0 && p.kind !== "slideshow" && (
             <div>
               <div className="mb-1 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">Voice v{p.voice_version}</div>
               <audio key={p.voice_version} src={`${media.voice(id)}?v=${p.voice_version}`} controls className="w-full" />
@@ -103,7 +106,7 @@ export default function ProjectPage() {
 
         {/* right column */}
         <div className="min-w-0 space-y-6">
-          <StageTimeline status={p.status} error={p.error} message={p.stage_message} />
+          <StageTimeline stages={p.kind === "slideshow" ? SLIDESHOW_STAGES : undefined} status={p.status} error={p.error} message={p.stage_message} />
 
           {plan && (
             <section>
@@ -135,9 +138,9 @@ export default function ProjectPage() {
                       {s.asset_id && <Thumb assetId={s.asset_id} className="w-12 shrink-0" />}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                          <span className="text-foreground">SCENE {s.order}</span><span>{fmtTime(s.start_time)}–{fmtTime(s.end_time)}</span>
-                          <span>{(s.end_time - s.start_time).toFixed(1)}s</span><span className="uppercase">{s.section}</span>
-                          <span>{s.asset_id} @ {s.asset_start_time.toFixed(2)}s</span>
+                          <span className="text-foreground">{p.kind === "slideshow" ? `SLIDE ${s.order + 1}` : `SCENE ${s.order}`}</span>{p.kind !== "slideshow" && <span>{fmtTime(s.start_time)}–{fmtTime(s.end_time)}</span>}
+                          {p.kind !== "slideshow" && <span>{(s.end_time - s.start_time).toFixed(1)}s</span>}<span className="uppercase">{s.section}</span>
+                          <span>{s.asset_id}{p.kind !== "slideshow" ? ` @ ${s.asset_start_time.toFixed(2)}s` : ""}</span>
                         </div>
                         <div className="truncate text-sm" title={s.intent ?? ""}>{s.intent}</div>
                         {s.overlay_text && <div className="font-mono text-[11px] text-primary">overlay “{s.overlay_text}”</div>}
@@ -270,5 +273,41 @@ function ChangeSceneDialog({ project, order, onClose, onPick, busy }: { project:
         {!isLoading && data?.length === 0 && <p className="text-sm text-muted-foreground">No alternative clips available.</p>}
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** TikTok photo-mode output: one slide at a time with ← → (like the TikTok carousel), zip download, suggested caption. */
+function SlideGallery({ p }: { p: Project }) {
+  const slides = p.slides ?? []
+  const running = RUNNING.has(p.status)
+  const [i, setI] = useState(0)
+  const [touchX, setTouchX] = useState<number | null>(null)
+  useEffect(() => { setI(0) }, [p.render_version, slides.length])
+  const n = slides.length
+  const go = (d: number) => { if (n) setI(x => (x + d + n) % n) }
+  if (!n) {
+    return <div className="grid aspect-[9/16] w-full place-items-center rounded-md border border-border bg-black/60 p-6 text-center text-sm text-muted-foreground">{running ? "Rendering the slides… they appear here when ready." : p.status === "FAILED" ? "No slides — fix the error and retry." : "No slides yet."}</div>
+  }
+  return (
+    <div className="space-y-2">
+      <div className="relative overflow-hidden rounded-md border border-border bg-black" tabIndex={0}
+        onKeyDown={e => { if (e.key === "ArrowLeft") go(-1); if (e.key === "ArrowRight") go(1) }}
+        onTouchStart={e => setTouchX(e.touches[0].clientX)}
+        onTouchEnd={e => { if (touchX != null) { const dx = e.changedTouches[0].clientX - touchX; if (Math.abs(dx) > 40) go(dx < 0 ? 1 : -1) } setTouchX(null) }}>
+        <img key={slides[i]} src={`${API}${slides[i]}`} alt={`slide ${i + 1}`} className="aspect-[9/16] w-full object-cover" />
+        <button type="button" aria-label="Previous slide" onClick={() => go(-1)} className="absolute left-2 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-full bg-background/70 text-foreground shadow hover:bg-background focus-visible:outline-2 focus-visible:outline-ring"><ChevronLeft className="size-5" /></button>
+        <button type="button" aria-label="Next slide" onClick={() => go(1)} className="absolute right-2 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-full bg-background/70 text-foreground shadow hover:bg-background focus-visible:outline-2 focus-visible:outline-ring"><ChevronRight className="size-5" /></button>
+        <span className="absolute left-2 top-2 rounded bg-background/80 px-1.5 py-0.5 font-mono text-[11px]">{i + 1}/{n}</span>
+        <a href={`${API}${slides[i]}`} target="_blank" rel="noreferrer" className="absolute right-2 top-2 rounded bg-background/80 px-1.5 py-0.5 font-mono text-[11px] hover:bg-background">open</a>
+        <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1">
+          {slides.map((_, k) => <button key={k} type="button" aria-label={`slide ${k + 1}`} onClick={() => setI(k)} className={cn("h-1.5 rounded-full transition-all", k === i ? "w-5 bg-primary" : "w-1.5 bg-foreground/50 hover:bg-foreground")} />)}
+        </div>
+      </div>
+      <div className="flex gap-1 overflow-x-auto pb-1">
+        {slides.map((u, k) => <button key={u} type="button" onClick={() => setI(k)} className={cn("shrink-0 overflow-hidden rounded border", k === i ? "border-primary" : "border-border opacity-70 hover:opacity-100")}><img src={`${API}${u}`} alt="" loading="lazy" className="h-16 w-9 object-cover" /></button>)}
+      </div>
+      {p.slides_zip_url && <a href={`${API}${p.slides_zip_url}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}><Download className="size-4" /> Download all slides (zip)</a>}
+      {p.post_caption && <div className="rounded-md border border-border bg-card p-2 text-xs"><span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">post caption</span><p className="mt-1">{p.post_caption}</p><p className="mt-1 text-[11px] text-muted-foreground">Upload the images as a photo post on TikTok and pick a trending sound there.</p></div>}
+    </div>
   )
 }

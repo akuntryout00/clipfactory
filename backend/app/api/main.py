@@ -20,6 +20,8 @@ def create_app(
     service_kwargs: dict | None = None,
     configs_dir: Path | None = None,
     lab_kwargs: dict | None = None,
+    trend_kwargs: dict | None = None,
+    telegram_transport=None,
 ) -> FastAPI:
     service_kwargs = dict(service_kwargs or {})
     lab_kwargs = dict(lab_kwargs or {})
@@ -49,6 +51,8 @@ def create_app(
         app.state.lab_jobs = jobs or JobRunner()  # separate runner for the isolated AI Lab module
         app.state.service_kwargs = service_kwargs
         app.state.lab_kwargs = lab_kwargs
+        app.state.trend_kwargs = dict(trend_kwargs or {})
+        app.state.telegram_transport = telegram_transport
         app.state.configs_dir = cfg_dir
         yield
         app.state.jobs.shutdown()
@@ -60,16 +64,19 @@ def create_app(
     )
 
     from app.aibroll.api import router as aibroll_router
-    from app.api.routes import assets, batches, meta, projects, shotlist
+    from app.api.routes import assets, batches, delivery, meta, projects, shotlist
     from app.lab.api import router as lab_router
+    from app.trends.api import router as trends_router
 
     app.include_router(meta.router)
     app.include_router(assets.router)
     app.include_router(projects.router)
     app.include_router(batches.router)
     app.include_router(shotlist.router)
+    app.include_router(delivery.router)
     app.include_router(lab_router)
     app.include_router(aibroll_router)
+    app.include_router(trends_router)
     return app
 
 

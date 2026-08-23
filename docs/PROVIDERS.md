@@ -48,3 +48,7 @@ Keys are read from `.env` (see `.env.example`). The System page and `clipfactory
 ## AI B-roll
 
 Uses the same image and video providers as the AI Lab, with a single start frame per clip. With a persona photo the start frame is an identity-preserving `images.edit` at high quality (≈$0.19) and the motion prompt tells the video model to keep the face unchanged; Seedance 2.0 via fal.ai gave the most faithful faces in our tests.
+
+## Trends (yt-dlp + OpenAI transcription)
+
+Public videos are fetched with yt-dlp (update it when platforms change: `pip install -U yt-dlp` / rebuild the api image). Instagram frequently requires a logged-in session; TikTok and YouTube Shorts usually work anonymously. Transcription uses OpenAI audio models (~$0.003–0.006 per minute); the analysis is one vision call with 10 low-detail frames.

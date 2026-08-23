@@ -57,7 +57,8 @@ def test_create_is_instant_and_plan_makes_keyframes(lab):
     v = svc.get(v.id)
     assert v.status == "PLANNED"
     kfs = svc.keyframes(v.id)
-    assert len(kfs) == 4 and [k.index for k in kfs] == [0, 1, 2, 3]
+    # 3 shots (cut, continuous, cut) → 5 keyframes: the continuous shot shares a frame, each cut adds a new start frame
+    assert len(kfs) == 5 and [k.index for k in kfs] == [0, 1, 2, 3, 4]
     assert all(k.prompt for k in kfs) and v.style_guide
     stages = [e.stage for e in svc.events(v.id)]
     assert "PLANNING" in stages and "PLANNED" in stages
@@ -153,7 +154,7 @@ def test_lab_api_flow(tmp_path):
         vid = r.json()["id"]
         # inline job runner → planning + images already ran by the time we look
         g = c.get(f"/lab/videos/{vid}").json()
-        assert g["status"] == "IMAGES_READY" and len(g["keyframes"]) == 4
+        assert g["status"] == "IMAGES_READY" and len(g["keyframes"]) == 5
         assert g["events"] and g["events"][0]["stage"] and all("created_at" in e for e in g["events"])
         assert c.post(f"/lab/videos/{vid}/retry").status_code == 202
         assert c.get(f"/lab/videos/{vid}/keyframes/0/image").headers["content-type"] == "image/png"
@@ -205,6 +206,7 @@ def test_generate_images_chains_previous_frame_as_reference(tmp_path):
         ("kf_01_v1.png", "kf_00_v1.png"),
         ("kf_02_v1.png", "kf_01_v1.png"),
         ("kf_03_v1.png", "kf_02_v1.png"),
+        ("kf_04_v1.png", "kf_03_v1.png"),
     ]
     # regenerating frame 2 uses frame 1 as reference
     img.calls.clear()
@@ -247,27 +249,40 @@ def test_edit_segment_uses_provider_edit_when_available(lab):
     assert svc.get(v.id).status == "DONE"
 
 
-def test_set_duration_same_segment_count_keeps_keyframes(lab):
+def test_plan_is_content_driven_shots_with_cuts_and_continuous(lab):
+    """The planner decides shots; continuous shots share the previous end frame, cuts get a fresh start frame."""
     svc, s = lab
-    v = svc.create(prompt="A quiet cafe morning", target_duration=15)  # 2×8 (fake max 8)
+    v = svc.create(prompt="A quiet cafe morning", target_duration=22)  # fake planner: 3 shots (cut, continuous, cut)
+    svc.plan(v.id)
+    segs = svc.segments(v.id)
+    kfs = svc.keyframes(v.id)
+    assert [x.transition for x in segs] == ["cut", "continuous", "cut"]
+    assert segs[1].from_index == segs[0].to_index  # continuous → shares the frame
+    assert segs[2].from_index != segs[1].to_index  # cut → new start frame
+    assert len(kfs) == 5 and all(x.seconds and 4 <= x.seconds <= 8 for x in segs)
+    assert svc.get(v.id).n_segments == 3 and "shots" in (svc.get(v.id).stage_message or "")
+
+
+def test_animate_uses_each_shots_planned_seconds(lab):
+    svc, s = lab
+    v = svc.create(prompt="A quiet cafe morning", target_duration=15)
     svc.run_to_images(v.id)
+    segs = svc.segments(v.id)
+    segs[0].seconds = 4  # pretend the planner chose a short beat
+    s.commit()
     svc.animate(v.id)
-    kf_paths = [k.image_path for k in svc.keyframes(v.id)]
-    v = svc.set_duration(v.id, 16)  # still 2 segments
-    assert (v.n_segments, v.segment_seconds) == (2, 8)
-    assert [k.image_path for k in svc.keyframes(v.id)] == kf_paths
-    assert all(x.status == "PENDING" for x in svc.segments(v.id)) and v.status == "IMAGES_READY" and v.final_path is None
+    out = svc.segments(v.id)
+    assert out[0].duration is not None and abs(out[0].duration - 4) < 1.0 and svc.get(v.id).status == "DONE"
 
 
-def test_set_duration_new_segment_count_replans(lab):
+def test_set_duration_replans_storyboard(lab):
     svc, s = lab
-    v = svc.create(prompt="A quiet cafe morning", target_duration=15)  # 2 segments, 3 keyframes
+    v = svc.create(prompt="A quiet cafe morning", target_duration=15)
     svc.run_to_images(v.id)
-    v = svc.set_duration(v.id, 25)  # 4 segments, 5 keyframes
-    assert (v.n_segments, v.segment_seconds) == (4, 6) and v.status == "PLANNING"
-    assert svc.keyframes(v.id) == []
+    v = svc.set_duration(v.id, 25)
+    assert v.status == "PLANNING" and svc.keyframes(v.id) == [] and v.target_duration == 25
     svc.run_to_images(v.id)
-    assert len(svc.keyframes(v.id)) == 5 and svc.get(v.id).status == "IMAGES_READY"
+    assert svc.get(v.id).status == "IMAGES_READY" and len(svc.segments(v.id)) >= 3
 
 
 def test_clone_copies_keyframes_and_animates_with_other_provider(lab, tmp_path):
@@ -281,8 +296,8 @@ def test_clone_copies_keyframes_and_animates_with_other_provider(lab, tmp_path):
     svc2 = LabService(s, image=svc.image, video=other, planner=svc.planner, storage_dir=svc.storage_dir.parent)
     c = svc2.clone(v.id)
     assert c.id != v.id and c.prompt == v.prompt and c.video_model == "other-video-model"
-    # other provider max 6 s → 15 s needs 3×5 (4 keyframes) ≠ 3 keyframes → keyframes can't be reused → must re-plan
-    assert (c.n_segments, c.segment_seconds) == (3, 5) and c.status == "PLANNING" and svc2.keyframes(c.id) == []
+    # other provider max 6 s but the source shots are 8 s clips → they don't fit → must re-plan
+    assert c.status == "PLANNING" and svc2.keyframes(c.id) == []
     # same segment count → keyframes are copied and the clone is ready to animate
     same = FakeVideoGen()
     same.model = "same-count-model"

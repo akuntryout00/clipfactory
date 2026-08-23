@@ -34,7 +34,7 @@ def test_persona_voice_id_env_substitution(monkeypatch):
 
 def test_all_four_templates_load():
     ids = {t.id for t in list_templates()}
-    assert ids == {"story_v1", "list_v1", "pov_v1", "problem_solution_v1"}
+    assert ids >= {"story_v1", "list_v1", "pov_v1", "problem_solution_v1"}  # user-created templates may exist too
 
 
 def test_template_weights_sum_to_one():

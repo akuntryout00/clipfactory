@@ -144,7 +144,13 @@ class ProjectService:
         self.progress("FAILED", p.error)
 
     def _configs(self, p: VideoProject) -> tuple[PersonaConfig, TemplateConfig]:
-        return persona_or_config(self.session, p.persona_id, self.configs_dir), load_template(p.template_id, self.configs_dir)
+        return persona_or_config(self.session, p.persona_id, self.configs_dir), self.template_for(p)
+
+    def template_for(self, p: VideoProject) -> TemplateConfig:
+        """The project's structure: an inline one-off template (trend remix) if present, else configs/templates/<id>.json."""
+        if p.template_override:
+            return TemplateConfig.model_validate(p.template_override)
+        return load_template(p.template_id, self.configs_dir)
 
     # ---------- project CRUD ----------
 
@@ -159,18 +165,33 @@ class ProjectService:
         return resolve_caption_style(self.session, base, p.caption_overrides)
 
     def create_project(
-        self, topic: str, template_id: str, persona_id: str | None = None, target_duration: float | None = None
+        self,
+        topic: str,
+        template_id: str,
+        persona_id: str | None = None,
+        target_duration: float | None = None,
+        template_override: dict | None = None,
     ) -> VideoProject:
         persona = persona_or_config(
             self.session, persona_id or get_settings().default_persona, self.configs_dir
         )  # FileNotFoundError if unknown
-        template = load_template(template_id, self.configs_dir)  # raises FileNotFoundError if unknown
+        if template_override:
+            template = TemplateConfig.model_validate(template_override)  # one-off structure, not saved under configs/
+            template_id = template.id
+        else:
+            template = load_template(template_id, self.configs_dir)  # raises FileNotFoundError if unknown
         td = float(target_duration if target_duration is not None else persona.target_duration or template.duration.target)
         if not (MIN_TARGET <= td <= MAX_TARGET):
             raise ValueError(f"target_duration must be within {MIN_TARGET:.0f}-{MAX_TARGET:.0f} s")
         if not topic or not topic.strip():
             raise ValueError("topic is required")
-        p = VideoProject(persona_id=persona.id, template_id=template.id, topic=topic.strip(), target_duration=td)
+        p = VideoProject(
+            persona_id=persona.id,
+            template_id=template.id,
+            topic=topic.strip(),
+            target_duration=td,
+            template_override=template.model_dump() if template_override else None,
+        )
         self.session.add(p)
         self.session.commit()
         self.session.add(ProjectEvent(project_id=p.id, stage="DRAFT", message="project created"))
@@ -414,7 +435,20 @@ class ProjectService:
 
     # ---------- full pipeline + controls ----------
 
+    def _slideshow(self, p: VideoProject):
+        from app.projects.slideshow import SlideshowPipeline
+
+        return SlideshowPipeline(self)
+
+    def is_slideshow(self, p: VideoProject) -> bool:
+        return self.template_for(p).kind == "slideshow"
+
     def generate(self, project_id: str) -> VideoProject:
+        p = self._get(project_id)
+        if self.is_slideshow(p):
+            persona, template = self._configs(p)
+            self._slideshow(p).generate(p, persona, template)
+            return self._get(project_id)
         self.run_script(project_id)
         self.run_voice(project_id)
         self.run_plan(project_id)
@@ -425,8 +459,18 @@ class ProjectService:
         """New hook/script → voice → plan → render (PRD §24)."""
         return self.generate(project_id)
 
+    def _slideshow_render_again(self, p: VideoProject) -> VideoProject:
+        persona, template = self._configs(p)
+        self._slideshow(p).render_again(p, persona, template)
+        return self._get(p.id)
+
     def change_assets(self, project_id: str) -> VideoProject:
         """Keep script + voice; re-plan with previously used assets excluded; render."""
+        p = self._get(project_id)
+        if self.is_slideshow(p):
+            persona, template = self._configs(p)
+            self._slideshow(p).change_photos(p, persona, template)
+            return self._get(project_id)
         p = self._get(project_id)
         prev = {s.asset_id for s in self.load_plan(p.id, p.plan_version).scenes} if p.plan_version else set()
         self.run_plan(project_id, exclude_asset_ids=prev, reuse_scenes=True)
@@ -436,6 +480,8 @@ class ProjectService:
     def render_again(self, project_id: str) -> VideoProject:
         """Same content + same assets; new seed → new start offsets / crop / zoom (PRD §24)."""
         p = self._get(project_id)
+        if self.is_slideshow(p):
+            return self._slideshow_render_again(p)
         if p.plan_version == 0:
             raise RuntimeError("nothing to re-render yet")
         old = self.load_plan(p.id, p.plan_version)
@@ -481,13 +527,20 @@ class ProjectService:
                 select(VideoScene).where(VideoScene.project_id == p.id, VideoScene.plan_version == p.plan_version)
             ).scalars()
         }
-        cands = find_candidates(self.session, tags, limit=limit, exclude_ids=current, min_relevance=-1.0, persona_id=p.persona_id)
+        kind = "image" if self.is_slideshow(p) else "video"
+        cands = find_candidates(
+            self.session, tags, limit=limit, exclude_ids=current, min_relevance=-1.0, persona_id=p.persona_id, kind=kind
+        )
         return [c.as_dict() for c in cands]
 
     def override_scene_asset(self, project_id: str, scene_order: int, asset_id: str) -> VideoProject:
         p = self._get(project_id)
         if self.session.get(Asset, asset_id) is None:
             raise ValueError(f"unknown asset {asset_id}")
+        if self.is_slideshow(p):
+            persona, template = self._configs(p)
+            self._slideshow(p).set_slide_photo(p, persona, template, scene_order, asset_id)
+            return self._get(project_id)
         old = self.load_plan(p.id, p.plan_version)
         fixed = {s.order: s.asset_id for s in old.scenes}
         if scene_order not in fixed:

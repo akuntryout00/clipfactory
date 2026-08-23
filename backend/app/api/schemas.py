@@ -9,9 +9,10 @@ from pydantic import BaseModel, Field
 
 class ProjectCreate(BaseModel):
     topic: str = Field(min_length=3, max_length=300)
-    template_id: str
+    template_id: str = "story_v1"
     persona_id: str | None = None
     target_duration: float | None = Field(default=None, ge=15, le=25)
+    template_override: dict | None = None  # one-off TemplateConfig (e.g. from a trend analysis); template_id is then taken from it
 
 
 class SceneOut(BaseModel):
@@ -69,6 +70,11 @@ class ProjectOut(BaseModel):
     video_url: str | None = None
     caption_overrides: dict | None = None
     batch_id: str | None = None
+    template_override: dict | None = None
+    kind: str = "video"  # template kind: video | slideshow
+    slides: list[str] = []  # slideshow: URLs of the rendered slide images (current render)
+    slides_zip_url: str | None = None
+    post_caption: str | None = None
     caption_style: dict | None = None  # effective style (template → global → project), for the UI preview
 
 
@@ -92,6 +98,7 @@ class AssetOut(BaseModel):
     file: str
     persona_id: str | None = None
     shotlist_item_id: str | None = None
+    kind: str = "video"
     description: str | None
     tags: list
     action: str | None

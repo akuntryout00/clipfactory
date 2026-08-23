@@ -77,3 +77,25 @@ def probe_video(path: Path) -> VideoMeta:
         codec=v.get("codec_name", ""),
         has_audio=bool(astreams),
     )
+
+
+IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def probe_image(path: Path) -> VideoMeta:
+    """Still photo → VideoMeta with duration 0 (width/height from the file, EXIF orientation applied)."""
+    from PIL import Image, ImageOps
+
+    with Image.open(path) as im:
+        im = ImageOps.exif_transpose(im)
+        w, h = im.size
+        fmt = (im.format or path.suffix.lstrip(".")).lower()
+    return VideoMeta(duration=0.0, width=int(w), height=int(h), fps=0.0, codec=fmt, has_audio=False)
+
+
+def probe_media(path: Path) -> VideoMeta:
+    return probe_image(path) if path.suffix.lower() in IMAGE_EXT else probe_video(path)
+
+
+def media_kind(path: Path | str) -> str:
+    return "image" if Path(path).suffix.lower() in IMAGE_EXT else "video"

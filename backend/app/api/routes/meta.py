@@ -93,6 +93,11 @@ def _mask(cfg) -> dict:
     d = cfg.model_dump()
     if d.get("voice", {}).get("voice_id"):
         d["voice"]["voice_id_set"] = True
+    tok = d.get("telegram_bot_token")
+    if tok:
+        d["telegram_bot_token"] = None  # never echo the secret; the UI only needs to know it is set
+        d["telegram_bot_token_set"] = True
+        d["telegram_bot_token_hint"] = "•" * 6 + str(tok)[-4:]
     return d
 
 
@@ -153,6 +158,8 @@ def _validate_persona(body: dict):
 
     body = dict(body)
     body.pop("voice_id_set", None)
+    body.pop("telegram_bot_token_set", None)
+    body.pop("telegram_bot_token_hint", None)
     if isinstance(body.get("voice"), dict):
         body["voice"].pop("voice_id_set", None)
     if not _persona_id_ok(str(body.get("id", ""))):
@@ -183,6 +190,10 @@ def persona_update(persona_id: str, body: dict, db: Session = Depends(get_db)):
         raise HTTPException(404, "persona not found")
     if body.get("id") != persona_id:
         raise HTTPException(422, "persona id in body must match the URL (ids cannot be renamed)")
+    if not body.get("telegram_bot_token") and body.get("telegram_bot_token") != "":  # None/missing → keep the saved secret; "" → clear
+        from app.personas.repo import get_persona
+
+        body["telegram_bot_token"] = get_persona(db, persona_id).telegram_bot_token
     return _mask(upsert_persona(db, _validate_persona(body)))
 
 

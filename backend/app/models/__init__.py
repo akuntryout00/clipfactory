@@ -124,6 +124,30 @@ class AiBrollJob(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class TrendAnalysis(Base):
+    """A TikTok/Reels/Shorts URL analysed for its retention mechanics, with a template proposal."""
+
+    __tablename__ = "trend_analyses"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: new_id("trend"))
+    url: Mapped[str] = mapped_column(Text)
+    platform: Mapped[str] = mapped_column(String(32), default="other")
+    persona_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="QUEUED")  # QUEUED | DOWNLOADING | TRANSCRIBING | ANALYZING | DONE | FAILED
+    stage_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    uploader: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    duration: Mapped[float | None] = mapped_column(Float, nullable=True)
+    meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    video_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    thumbnail_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
+    analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    template_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # set once a template was created from it
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class AppSetting(Base):
     """Key/value store for UI-editable global settings (e.g. key 'captions')."""
 
@@ -148,6 +172,7 @@ class Asset(Base):
     persona_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # which target shot (persona B-roll shot list) this clip fulfils; None = unassigned
     shotlist_item_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="video")  # video (B-roll clip) | image (photo for slideshows)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     action: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -210,6 +235,8 @@ class VideoProject(Base):
     # per-project caption overrides (font, size, position…) on top of the global caption settings; None = use defaults
     caption_overrides: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     batch_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # one-off structure (full TemplateConfig dict) used instead of configs/templates/<template_id>.json — e.g. a trend remix
+    template_override: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     scenes: Mapped[list[VideoScene]] = relationship(back_populates="project", cascade="all, delete-orphan")
     voices: Mapped[list[VoiceGeneration]] = relationship(back_populates="project", cascade="all, delete-orphan")

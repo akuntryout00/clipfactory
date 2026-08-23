@@ -15,7 +15,9 @@ from app.schemas.pipeline import (
     ScriptOutput,
     ShotlistMatchOutput,
     ShotlistOutput,
+    SlideshowScript,
     TopicIdeasOutput,
+    TrendAnalysisOutput,
     WordTiming,
 )
 
@@ -58,6 +60,14 @@ class LLMProvider(Protocol):
     ) -> ShotlistOutput: ...
 
     def match_shotlist(self, *, items: list[dict], assets: list[dict]) -> ShotlistMatchOutput: ...
+
+    def generate_slides(
+        self, *, persona: PersonaConfig, template: TemplateConfig, topic: str, n_slides: int, photo_tags: list[str]
+    ) -> SlideshowScript: ...
+
+    def analyze_trend(
+        self, *, persona: PersonaConfig, meta: dict, transcript: str | None, frames: list[bytes], template_ids: list[str]
+    ) -> TrendAnalysisOutput: ...
 
 
 def get_llm(provider: str | None = None) -> LLMProvider:

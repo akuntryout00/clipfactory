@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
 from app.lab.models import LabEvent, LabKeyframe, LabSegment, LabVideo
-from app.lab.planning import segment_plan
+from app.lab.planning import PREFERRED_MAX_SEG, segment_plan
 from app.lab.providers import ImageGen, Planner, VideoGen, get_image_gen, get_planner, get_video_gen, provider_label
 
 log = logging.getLogger(__name__)
@@ -152,11 +152,21 @@ class LabService:
 
     # ---------- step 1: storyboard plan (LLM) ----------
     def plan(self, video_id: str) -> LabVideo:
+        """Content-driven storyboard: the planner decides the shots (count, length, cut vs continuous) from the idea; every shot
+        becomes one segment between a start and an end keyframe. Continuous shots reuse the previous end frame as their start."""
         v = self.get(video_id)
-        n = v.n_segments
-        self._status(v, "PLANNING", f"Planning storyboard with {getattr(self.planner, 'name', 'llm')} ({n + 1} keyframes)…")
+        vg = self._vg(v)
+        min_clip = max(1, int(getattr(vg, "min_seconds", 4)))
+        max_clip = max(min_clip, min(int(getattr(vg, "max_seconds", 8)), PREFERRED_MAX_SEG))
+        self._status(
+            v,
+            "PLANNING",
+            f"Planning shots with {getattr(self.planner, 'name', 'llm')} (target {v.target_duration:.0f}s, clips {min_clip}-{max_clip}s)…",
+        )
         try:
-            plan = self.planner.plan(prompt=v.prompt, n_keyframes=n + 1, segment_seconds=v.segment_seconds, style=v.style)
+            plan = self.planner.plan_shots(
+                prompt=v.prompt, target_seconds=v.target_duration, min_clip=min_clip, max_clip=max_clip, style=v.style
+            )
         except Exception as exc:  # noqa: BLE001
             self._fail(v, "plan", exc)
             raise
@@ -165,16 +175,38 @@ class LabService:
         for old in self.segments(video_id):
             self.session.delete(old)
         v.style_guide = plan.style_guide
-        for k in plan.keyframes:
-            self.session.add(LabKeyframe(video_id=v.id, index=k.index, prompt=k.prompt, caption=k.caption))
-        for i in range(n):
-            motion = plan.keyframes[i].motion_to_next if i < len(plan.keyframes) else None
-            self.session.add(LabSegment(video_id=v.id, index=i, from_index=i, to_index=i + 1, prompt=motion))
+        kf_index = 0
+        prev_end: int | None = None
+        for sh in plan.shots:
+            if prev_end is not None and sh.transition == "continuous":
+                start_idx = prev_end
+            else:
+                start_idx = kf_index
+                self.session.add(LabKeyframe(video_id=v.id, index=start_idx, prompt=sh.start_prompt, caption=f"{sh.title} · start"))
+                kf_index += 1
+            end_idx = kf_index
+            self.session.add(LabKeyframe(video_id=v.id, index=end_idx, prompt=sh.end_prompt, caption=f"{sh.title} · end"))
+            kf_index += 1
+            self.session.add(
+                LabSegment(
+                    video_id=v.id,
+                    index=sh.index,
+                    from_index=start_idx,
+                    to_index=end_idx,
+                    prompt=sh.motion,
+                    seconds=sh.seconds,
+                    transition=sh.transition,
+                )
+            )
+            prev_end = end_idx
+        v.n_segments = len(plan.shots)
+        v.segment_seconds = max(1, int(round(sum(sh.seconds for sh in plan.shots) / max(1, len(plan.shots)))))
         self.session.commit()
         self._status(
             v,
             "PLANNED",
-            f"Storyboard ready: {len(plan.keyframes)} keyframes — " + " · ".join(k.caption for k in plan.keyframes),
+            f"Storyboard ready: {len(plan.shots)} shots / {kf_index} keyframes — "
+            + " · ".join(f"{sh.title} ({sh.seconds}s{', cont.' if sh.transition == 'continuous' else ''})" for sh in plan.shots),
             level="success",
         )
         return v
@@ -289,7 +321,11 @@ class LabService:
         vg = self._vg(v)
         v.video_model = getattr(vg, "model", None) or v.video_model
         segs = self.segments(video_id)
-        self._status(v, "ANIMATING", f"Animating {len(segs)} segments with {v.video_model} ({v.segment_seconds}s each)…")
+        self._status(
+            v,
+            "ANIMATING",
+            f"Animating {len(segs)} shots with {v.video_model} ({', '.join(str(x.seconds or v.segment_seconds) + 's' for x in segs)})…",
+        )
         try:
             for s in segs:
                 if not force and s.status == "DONE" and s.video_path and Path(s.video_path).is_file():
@@ -305,14 +341,15 @@ class LabService:
                 out = self.dir(v.id) / f"seg_{s.index:02d}.mp4"
                 first, last = Path(kfs[s.from_index].image_path), Path(kfs[s.to_index].image_path)
                 motion = s.prompt or "smooth natural motion between the two frames"
+                secs = int(s.seconds or v.segment_seconds)
                 builder = getattr(vg, "build_prompt", None)
                 prompt = (
-                    builder(motion, v.segment_seconds, v.style_guide or "")
+                    builder(motion, secs, v.style_guide or "")
                     if builder
                     else f"{motion}. {v.style_guide or ''} Vertical 9:16 video, cinematic, no text."
                 )
                 try:
-                    vg.animate(first=first, last=last, prompt=prompt, seconds=v.segment_seconds, out_path=out)
+                    vg.animate(first=first, last=last, prompt=prompt, seconds=secs, out_path=out)
                 except Exception as exc:  # noqa: BLE001
                     s.status, s.error = "FAILED", str(exc)
                     self.session.commit()
@@ -373,12 +410,12 @@ class LabService:
                 motion = seg.prompt or "smooth natural motion between the two frames"
                 builder = getattr(vg, "build_prompt", None)
                 full = (
-                    builder(motion, v.segment_seconds, v.style_guide or "")
+                    builder(motion, int(seg.seconds or v.segment_seconds), v.style_guide or "")
                     if builder
                     else f"{motion}. {v.style_guide or ''} Vertical 9:16 video, cinematic, no text."
                 )
                 self._log(v, "SEGMENT", f"Segment {index + 1}/{total}: re-animating with {v.video_model} — “{motion[:80]}”…")
-                vg.animate(first=first, last=last, prompt=full, seconds=v.segment_seconds, out_path=out)
+                vg.animate(first=first, last=last, prompt=full, seconds=int(seg.seconds or v.segment_seconds), out_path=out)
                 seg.last_edit = None
             seg.video_path, seg.duration, seg.status, seg.error = str(out), _duration(out), "DONE", None
             seg.provider_ref = getattr(vg, "last_ref", None) or seg.provider_ref
@@ -426,8 +463,17 @@ class LabService:
         self.session.commit()
         self._log(c, "CREATED", f"Cloned from {src.id} · {provider_label(pid)} ({getattr(vg, 'model', '?')}) · {n} × {seg}s")
         src_kfs = self.keyframes(src.id)
-        if src_kfs and len(src_kfs) == n + 1 and all(k.status == "DONE" and k.image_path and Path(k.image_path).is_file() for k in src_kfs):
+        src_segs = self.segments(src.id)
+        lo, hi = int(getattr(vg, "min_seconds", 4)), int(getattr(vg, "max_seconds", 8))
+        fits = bool(src_segs) and all(lo <= int(x.seconds or src.segment_seconds) <= hi for x in src_segs)
+        if (
+            fits
+            and src_kfs
+            and target == src.target_duration
+            and all(k.status == "DONE" and k.image_path and Path(k.image_path).is_file() for k in src_kfs)
+        ):
             c.style_guide = src.style_guide
+            c.n_segments, c.segment_seconds = src.n_segments, src.segment_seconds
             for k in src_kfs:
                 dst = self.dir(c.id) / f"kf_{k.index:02d}_v1.png"
                 shutil.copyfile(k.image_path, dst)
@@ -436,53 +482,47 @@ class LabService:
                         video_id=c.id, index=k.index, prompt=k.prompt, caption=k.caption, image_path=str(dst), status="DONE", version=1
                     )
                 )
-            src_segs = {x.index: x for x in self.segments(src.id)}
-            for i in range(n):
+            for x in src_segs:
                 self.session.add(
-                    LabSegment(video_id=c.id, index=i, from_index=i, to_index=i + 1, prompt=src_segs[i].prompt if i in src_segs else None)
+                    LabSegment(
+                        video_id=c.id,
+                        index=x.index,
+                        from_index=x.from_index,
+                        to_index=x.to_index,
+                        prompt=x.prompt,
+                        seconds=x.seconds,
+                        transition=x.transition,
+                    )
                 )
             self.session.commit()
             self._status(
                 c,
                 "IMAGES_READY",
-                f"Keyframes copied from {src.id} — press Animate to render with {getattr(vg, 'model', '?')}",
+                f"Storyboard and keyframes copied from {src.id} — press Animate to render with {getattr(vg, 'model', '?')}",
                 level="success",
             )
         else:
-            self._log(c, "PLANNING", f"Segment plan differs from the source ({n + 1} keyframes needed) — storyboard must be re-planned")
+            why = "clip lengths don't fit the new model" if not fits and src_segs else "new length or no finished keyframes"
+            self._log(c, "PLANNING", f"Storyboard must be re-planned ({why})")
         return c
 
     def set_duration(self, video_id: str, target_duration: float) -> LabVideo:
-        """Change the target length. Same segment count → keep keyframes, re-animate; different → re-plan storyboard."""
+        """Change the target length → the storyboard is re-planned around the new length (shots, cuts and clip lengths are
+        content-driven, so they are decided again); keyframes are regenerated by the next run."""
         v = self.get(video_id)
         if not (MIN_TARGET <= target_duration <= MAX_TARGET):
             raise ValueError(f"target_duration must be {MIN_TARGET:.0f}-{MAX_TARGET:.0f} s")
         vg = self._vg(v)
         n, seg = segment_plan(target_duration, max_seg=getattr(vg, "max_seconds", 8), min_seg=getattr(vg, "min_seconds", 4))
-        same_n = n == v.n_segments
         v.target_duration, v.n_segments, v.segment_seconds = target_duration, n, seg
         v.final_path, v.final_duration = None, None
-        if same_n:
-            for x in self.segments(video_id):
-                x.status, x.video_path, x.error, x.duration = "PENDING", None, None, None
-            self.session.commit()
-            has_images = bool(self.keyframes(video_id)) and all(k.status == "DONE" for k in self.keyframes(video_id))
-            self._status(
-                v,
-                "IMAGES_READY" if has_images else "PLANNED",
-                f"Length set to {target_duration:.0f}s ({n} × {seg}s) — keyframes kept; press Animate to re-render",
-                level="info",
-            )
-        else:
-            for k in self.keyframes(video_id):
-                self.session.delete(k)
-            for x in self.segments(video_id):
-                self.session.delete(x)
-            v.style_guide = None
-            self.session.commit()
-            self._status(
-                v, "PLANNING", f"Length set to {target_duration:.0f}s ({n} × {seg}s) — storyboard must be re-planned ({n + 1} keyframes)"
-            )
+        for k in self.keyframes(video_id):
+            self.session.delete(k)
+        for x in self.segments(video_id):
+            self.session.delete(x)
+        v.style_guide = None
+        self.session.commit()
+        self._status(v, "PLANNING", f"Length set to {target_duration:.0f}s — storyboard will be re-planned for the new length")
         return v
 
     def _concat(self, parts: list[Path], out: Path) -> None:

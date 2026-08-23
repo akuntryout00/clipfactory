@@ -1,0 +1,40 @@
+{
+  "id": "slideshow_v1",
+  "name": "Slideshow",
+  "description": "Photo slideshow in the TikTok photo-mode style: 6-9 photos, one big line of text per slide, no voice-over (add a trending sound when posting).",
+  "kind": "slideshow",
+  "duration": {
+    "min": 12,
+    "target": 18,
+    "max": 25
+  },
+  "sections": [
+    {
+      "type": "hook",
+      "weight": 0.15,
+      "guidance": "Slide 1 is the scroll-stopper: a bold claim, 'things nobody tells you about…', 'POV:' or a numbered promise."
+    },
+    {
+      "type": "slides",
+      "weight": 0.7,
+      "guidance": "One idea per slide, max ~10 words, specific and relatable; build a list, a story, or a before/after."
+    },
+    {
+      "type": "closing",
+      "weight": 0.15,
+      "guidance": "Last slide is the twist/punchline or the takeaway; no follow/like CTA."
+    }
+  ],
+  "voiceover": false,
+  "caption_style": "slideshow",
+  "music_category": null,
+  "closing": "End on a twist or punchline that makes people rewatch or share. No call to action.",
+  "shot_duration": {
+    "min": 2.0,
+    "max": 4.0
+  },
+  "overlays": {
+    "min": 6,
+    "max": 9
+  }
+}

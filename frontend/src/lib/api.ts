@@ -1,4 +1,4 @@
-import type { AiBrollEstimate, AiBrollJob, Artifacts, Asset, Batch, Candidate, ProviderSettings, ProviderTestResult, Shotlist, CaptionOverrides, CaptionStyle, ClipAnalysis, FontInfo, LabEstimate, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
+import type { AiBrollEstimate, AiBrollJob, Artifacts, InboxItem, InboxLink, Trend, Asset, Batch, Candidate, ProviderSettings, ProviderTestResult, Shotlist, CaptionOverrides, CaptionStyle, ClipAnalysis, FontInfo, LabEstimate, LabProvider, LabVideo, Persona, Plan, Project, SystemInfo, Template } from "./types"
 
 export const API = import.meta.env.VITE_API_BASE || "/api"
 
@@ -64,7 +64,7 @@ export const api = {
   suggestions: (id: string, order: number) => req<Candidate[]>(`/projects/${id}/scenes/${order}/suggestions`),
   setSceneAsset: (id: string, order: number, asset_id: string) =>
     req<unknown>(`/projects/${id}/scenes/${order}/asset`, { method: "POST", body: JSON.stringify({ asset_id }) }),
-  assets: (persona?: string) => req<Asset[]>(`/assets${persona ? `?persona=${encodeURIComponent(persona)}` : ""}`),
+  assets: (persona?: string, kind?: "video" | "image") => req<Asset[]>(`/assets?${persona ? `persona=${encodeURIComponent(persona)}&` : ""}${kind ? `kind=${kind}` : ""}`),
   searchAssets: (q: string, persona?: string) => req<Candidate[]>(`/assets/search?q=${encodeURIComponent(q)}&limit=30${persona ? `&persona=${encodeURIComponent(persona)}` : ""}`),
   patchAsset: (id: string, patch: Partial<Asset>) => req<Asset>(`/assets/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   analyzeAsset: async (file: File) => {
@@ -132,6 +132,30 @@ export const aibroll = {
   deletePersonaImage: (persona: string) => req<void>(`/ai-broll/personas/${encodeURIComponent(persona)}/image`, { method: "DELETE" }),
 }
 
+export const delivery = {
+  inboxLink: (persona: string, base?: string) => req<InboxLink>(`/personas/${encodeURIComponent(persona)}/inbox-link${base ? `?base=${encodeURIComponent(base)}` : ""}`),
+  rotateInboxLink: (persona: string, base?: string) => req<InboxLink>(`/personas/${encodeURIComponent(persona)}/inbox-link/rotate${base ? `?base=${encodeURIComponent(base)}` : ""}`, { method: "POST" }),
+  qrUrl: (persona: string, base: string) => `${API}/personas/${encodeURIComponent(persona)}/inbox-qr.png?base=${encodeURIComponent(base)}&t=${Date.now()}`,
+  inboxItems: (persona: string, key: string, approvedOnly = true) =>
+    req<{ persona_id: string; persona_name: string; items: InboxItem[] }>(`/inbox/${encodeURIComponent(persona)}/items?key=${encodeURIComponent(key)}&approved_only=${approvedOnly}`),
+  connectTelegram: (persona: string, token: string) => req<{ ok: boolean; message: string; bot: string }>(`/personas/${encodeURIComponent(persona)}/telegram/connect`, { method: "POST", body: JSON.stringify({ token }) }),
+  telegramChats: (persona: string) => req<{ chats: { id: string; title: string; type: string | null; username: string | null }[] }>(`/personas/${encodeURIComponent(persona)}/telegram/chats`),
+  setTelegramChat: (persona: string, chat_id: string) => req<{ ok: boolean; message: string }>(`/personas/${encodeURIComponent(persona)}/telegram/chat`, { method: "PUT", body: JSON.stringify({ chat_id }) }),
+  testPersonaTelegram: (persona: string, body: { token?: string | null; chat_id?: string | null }) =>
+    req<{ ok: boolean; message: string }>(`/personas/${encodeURIComponent(persona)}/telegram/test`, { method: "POST", body: JSON.stringify(body) }),
+  sendTelegram: (projectId: string, chat_id?: string | null) => req<{ chat_id: string; sent: string[] }>(`/projects/${projectId}/send-telegram`, { method: "POST", body: JSON.stringify({ chat_id: chat_id ?? null }) }),
+}
+
+export const trends = {
+  list: (persona?: string) => req<Trend[]>(`/trends${persona ? `?persona=${encodeURIComponent(persona)}` : ""}`),
+  get: (id: string) => req<Trend>(`/trends/${id}`),
+  create: (body: { url: string; persona_id?: string | null }) => req<Trend>("/trends", { method: "POST", body: JSON.stringify(body) }),
+  retry: (id: string) => req<Trend>(`/trends/${id}/retry`, { method: "POST" }),
+  delete: (id: string) => req<void>(`/trends/${id}`, { method: "DELETE" }),
+  createTemplate: (id: string, template: Template | null) => req<Template>(`/trends/${id}/template`, { method: "POST", body: JSON.stringify({ template }) }),
+  generate: (id: string, body: { topic: string; persona_id?: string | null; target_duration?: number | null }) => req<Project>(`/trends/${id}/generate`, { method: "POST", body: JSON.stringify(body) }),
+}
+
 export const media = {
   video: (id: string) => `${API}/projects/${id}/video`,
   voice: (id: string) => `${API}/projects/${id}/voice`,
@@ -140,6 +164,8 @@ export const media = {
   assetFile: (id: string) => `${API}/assets/${id}/file`,
   fontFile: (name: string) => `${API}/fonts/file/${encodeURIComponent(name)}`,
   personaImage: (persona: string, v = 0) => `${API}/ai-broll/personas/${encodeURIComponent(persona)}/image?v=${v}`,
+  trendThumb: (id: string) => `${API}/trends/${id}/thumbnail`,
+  trendVideo: (id: string) => `${API}/trends/${id}/video`,
   aibrollKeyframe: (id: string) => `${API}/ai-broll/jobs/${id}/keyframe`,
   aibrollVideo: (id: string) => `${API}/ai-broll/jobs/${id}/video`,
 }

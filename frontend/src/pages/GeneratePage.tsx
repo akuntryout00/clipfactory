@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { Sparkles } from "lucide-react"
 import { toast } from "sonner"
@@ -16,8 +16,9 @@ export default function GeneratePage() {
   const nav = useNavigate()
   const { data: templates } = useQuery({ queryKey: ["templates"], queryFn: api.templates })
   const { personas, activeId, setActiveId } = usePersona()
-  const [templateId, setTemplateId] = useState("story_v1")
-  const [topic, setTopic] = useState("")
+  const [params] = useSearchParams()
+  const [templateId, setTemplateId] = useState(params.get("template") || "story_v1")
+  const [topic, setTopic] = useState(params.get("topic") || "")
   const [duration, setDuration] = useState(18)
   const [personaId, setPersonaId] = useState(activeId)
   useEffect(() => { setPersonaId(activeId) }, [activeId])
@@ -40,7 +41,7 @@ export default function GeneratePage() {
         <p className="mt-1 text-sm text-muted-foreground">Give it a topic and a template. Script, voice, scenes, B-roll, captions and render run in the background.</p>
       </PageHeader>
       <div className="grid gap-6 px-8 py-6 lg:grid-cols-[1fr_340px]">
-        <form className="space-y-6" onSubmit={e => { e.preventDefault(); if (topic.trim().length >= 3) create.mutate() }}>
+        <form noValidate className="space-y-6" onSubmit={e => { e.preventDefault(); if (topic.trim().length >= 3) create.mutate() }}>
           <div>
             <Label htmlFor="persona" className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">Persona</Label>
             <select id="persona" value={personaId} onChange={e => setPersonaId(e.target.value)} className="h-9 w-full max-w-md rounded-md border border-input bg-card px-2 text-sm focus-visible:outline-2 focus-visible:outline-ring">
@@ -56,7 +57,7 @@ export default function GeneratePage() {
                   className={cn("rounded-md border p-3 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring",
                     templateId === t.id ? "border-primary bg-primary/5" : "border-border bg-card")}>
                   <div className="flex items-baseline justify-between">
-                    <span className="font-heading font-semibold">{t.name}</span>
+                    <span className="font-heading font-semibold">{t.name}{t.kind === "slideshow" && <span className="ml-2 rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] font-normal uppercase tracking-wider text-primary">photo slideshow</span>}</span>
                     <span className="font-mono text-[11px] text-muted-foreground">{t.id}</span>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">{t.description}</p>
@@ -69,7 +70,7 @@ export default function GeneratePage() {
             <Label htmlFor="topic" className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">Topic</Label>
             <Textarea id="topic" value={topic} onChange={e => setTopic(e.target.value)} rows={3}
               placeholder={templateId === "pov_v1" ? "POV: you opened your laptop just to check one thing" : "Why I stopped answering Slack in the morning"} />
-            <p className="mt-1 text-xs text-muted-foreground">Write it the way the hook could sound. First person works best for this persona.</p>
+            <p className="mt-1 text-xs text-muted-foreground">{tpl?.kind === "slideshow" ? "Slideshow: one bold line per photo, no voice-over — photos come from this persona's Photos library (B-roll → Photos); add a trending sound when you post." : "Write it the way the hook could sound. First person works best for this persona."}</p>
           </div>
           <div>
             <Label htmlFor="dur" className="mb-2 block text-xs uppercase tracking-wider text-muted-foreground">Target length · <span className="font-mono text-foreground">{duration}s</span></Label>

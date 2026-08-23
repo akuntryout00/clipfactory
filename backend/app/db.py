@@ -51,10 +51,16 @@ def _ensure_columns(engine) -> None:
 
     insp = inspect(engine)
     wanted = {
-        "lab_segments": {"provider_ref": "VARCHAR(256)", "last_edit": "TEXT", "version": "INTEGER DEFAULT 0"},
+        "lab_segments": {
+            "provider_ref": "VARCHAR(256)",
+            "last_edit": "TEXT",
+            "version": "INTEGER DEFAULT 0",
+            "seconds": "INTEGER",
+            "transition": "VARCHAR(16)",
+        },
         "lab_videos": {"video_provider": "VARCHAR(64)"},
-        "assets": {"persona_id": "VARCHAR(64)", "shotlist_item_id": "VARCHAR(64)"},
-        "video_projects": {"caption_overrides": "JSON", "batch_id": "VARCHAR(64)"},
+        "assets": {"persona_id": "VARCHAR(64)", "shotlist_item_id": "VARCHAR(64)", "kind": "VARCHAR(16) DEFAULT 'video'"},
+        "video_projects": {"caption_overrides": "JSON", "batch_id": "VARCHAR(64)", "template_override": "JSON"},
     }
     with engine.begin() as conn:
         for table, cols in wanted.items():

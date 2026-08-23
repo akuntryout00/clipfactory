@@ -21,7 +21,9 @@ from app.schemas.pipeline import (
     ScriptOutput,
     ShotlistMatchOutput,
     ShotlistOutput,
+    SlideshowScript,
     TopicIdeasOutput,
+    TrendAnalysisOutput,
     WordTiming,
 )
 
@@ -120,6 +122,28 @@ class OpenAIProvider:
         return self._parse(
             prompts.SHOTLIST_MATCH_SYSTEM, prompts.shotlist_match_user_prompt(items, assets), ShotlistMatchOutput, temperature=0.1
         )
+
+    def generate_slides(
+        self, *, persona: PersonaConfig, template: TemplateConfig, topic: str, n_slides: int, photo_tags: list[str]
+    ) -> SlideshowScript:
+        return self._parse(
+            prompts.SLIDES_SYSTEM,
+            prompts.slides_user_prompt(persona, template, topic, n_slides, photo_tags),
+            SlideshowScript,
+            temperature=0.8,
+        )
+
+    def analyze_trend(
+        self, *, persona: PersonaConfig, meta: dict, transcript: str | None, frames: list[bytes], template_ids: list[str]
+    ) -> TrendAnalysisOutput:
+        import base64
+
+        content: list[dict] = [{"type": "text", "text": prompts.trend_user_prompt(persona, meta, transcript, len(frames), template_ids)}]
+        for fr in frames:
+            content.append(
+                {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(fr).decode(), "detail": "low"}}
+            )
+        return self._parse(prompts.TREND_SYSTEM, content, TrendAnalysisOutput, temperature=0.4)
 
     def draft_persona(self, *, name: str, age: int | None, location: str | None, language: str, about: str) -> PersonaDraft:
         return self._parse(

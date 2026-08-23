@@ -48,6 +48,8 @@ class PersonaConfig(BaseModel):
     speech_rate_wps: float = 2.5  # measured spoken words/second for this voice (calibrate from real runs)
     voice: VoiceConfig
     default_music_category: str | None = None
+    telegram_bot_token: str | None = None  # delivery: this persona's own Telegram bot (each account has its own bot)
+    telegram_chat_id: str | None = None  # delivery: chat/channel (with that bot) that receives the approved videos
 
     @model_validator(mode="after")
     def _durations(self):
@@ -89,6 +91,7 @@ class TemplateConfig(BaseModel):
     id: str
     name: str
     description: str = ""
+    kind: Literal["video", "slideshow"] = "video"  # slideshow = photo slides with big text (TikTok photo-mode style), no voice-over
     duration: DurationSpec
     sections: list[SectionSpec]
     voiceover: bool = True

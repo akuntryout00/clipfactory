@@ -43,6 +43,7 @@ pytest==8.4.2
 python-dotenv==1.2.3
 python-multipart==0.0.32
 PyYAML==6.0.3
+qrcode==8.2
 requests==2.34.2
 rich==15.0.0
 ruff==0.16.4
@@ -60,3 +61,4 @@ uvicorn==0.52.4
 uvloop==0.22.1
 watchfiles==1.2.0
 websockets==16.1.1
+yt-dlp==2026.8.19

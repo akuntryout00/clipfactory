@@ -10,10 +10,12 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.assets.metadata import probe_video
+from app.assets.metadata import media_kind, probe_media
 from app.models import Asset
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv"}
+IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+MEDIA_EXT = VIDEO_EXT | IMAGE_EXT
 SKIP_DIRS = {"_originals", "_rejected", "_tmp"}
 SEED_FILENAME = "broll_database.json"
 
@@ -76,7 +78,7 @@ def _next_asset_id(session: Session, reserved: set[str]) -> str:
 
 def iter_asset_files(root: Path):
     for p in sorted(root.rglob("*")):
-        if not p.is_file() or p.suffix.lower() not in VIDEO_EXT:
+        if not p.is_file() or p.suffix.lower() not in MEDIA_EXT:
             continue
         if any(part in SKIP_DIRS or part.startswith(".") for part in p.relative_to(root).parts):
             continue
@@ -108,7 +110,7 @@ def import_assets(session: Session, assets_dir: Path, approve_unseeded: bool = F
     for path in iter_asset_files(assets_dir):
         rel = path.relative_to(assets_dir).as_posix()
         try:
-            meta = probe_video(path)
+            meta = probe_media(path)
         except Exception as exc:  # noqa: BLE001
             report.errors.append(f"{rel}: {exc}")
             continue
@@ -121,6 +123,7 @@ def import_assets(session: Session, assets_dir: Path, approve_unseeded: bool = F
             session.flush()
             existing[rel] = asset
         # technical metadata always refreshed
+        asset.kind = media_kind(rel)
         asset.duration = round(meta.duration, 3)
         asset.width, asset.height, asset.fps = meta.width, meta.height, round(meta.fps, 3)
         asset.orientation, asset.codec = meta.orientation, meta.codec
@@ -168,7 +171,7 @@ def register_asset_file(
     persona_id: str | None = None,
 ) -> Asset:
     """Create one Asset row for a file already placed under assets_dir (used by single-file upload)."""
-    meta = probe_video(assets_dir / rel)
+    meta = probe_media(assets_dir / rel)
     tags = [t.strip().lower() for t in (tags or []) if t.strip()]
     sem = infer_semantics(rel, description, tags)
     margin = min(0.2, meta.duration * 0.05)
@@ -177,6 +180,7 @@ def register_asset_file(
     asset = Asset(
         id=_next_asset_id(session, set()),
         file=rel,
+        kind=media_kind(rel),
         persona_id=persona_id or persona_for_path(rel, _persona_ids(session), None),
         description=description,
         tags=tags,

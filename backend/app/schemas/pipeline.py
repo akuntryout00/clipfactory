@@ -242,3 +242,62 @@ class ShotlistAssignment(BaseModel):
 
 class ShotlistMatchOutput(BaseModel):
     assignments: list[ShotlistAssignment]
+
+
+class TrendHook(BaseModel):
+    text: str = Field(description="the hook as spoken/shown in the first 1-3 seconds (verbatim or close)")
+    type: str = Field(description="pattern-interrupt | question | bold claim | POV | list promise | story open | visual hook | other")
+    seconds: float = Field(description="how long the hook lasts")
+
+
+class TrendSection(BaseModel):
+    label: str = Field(description="short name: hook, setup, item_1, payoff, cta…")
+    start: float
+    end: float
+    purpose: str = Field(description="what this part does for retention (one sentence)")
+
+
+class TrendTemplateProposal(BaseModel):
+    id: str = Field(description="snake_case template id ending with _v1, e.g. myth_bust_v1")
+    name: str
+    description: str
+    duration_min: float
+    duration_target: float
+    duration_max: float
+    sections: list[TrendSection] = Field(description="ordered sections with start/end in seconds of the analysed video; purpose = guidance")
+    voiceover: bool
+    closing: str = Field(description="one-sentence closing rule (how the video should end)")
+    shot_min: float = Field(description="typical shortest shot in seconds")
+    shot_max: float = Field(description="typical longest shot in seconds")
+    overlays_min: int
+    overlays_max: int
+
+
+class TrendAnalysisOutput(BaseModel):
+    summary: str = Field(description="2-3 sentences: what the video is and the core mechanic")
+    hook: TrendHook
+    structure: list[TrendSection]
+    pacing: str = Field(description="cuts, shot length, speech speed, on-screen text rhythm — one short paragraph")
+    visual_style: str = Field(description="framing, camera, lighting, B-roll type, face on camera or not")
+    caption_style: str = Field(description="captions/on-screen text: position, size, emphasis, animation, colour")
+    audio: str = Field(description="voice-over vs talking head, music/trend sound, sound effects")
+    why_it_works: list[str] = Field(description="3-6 concrete retention/engagement mechanics")
+    tips_for_persona: list[str] = Field(
+        description="4-8 specific, actionable tips for THIS persona to use the mechanic with their own B-roll"
+    )
+    remix_ideas: list[str] = Field(description="4-6 topic ideas for this persona that reuse the mechanic, phrased as hooks")
+    template_proposal: TrendTemplateProposal
+
+
+class SlideSpec(BaseModel):
+    index: int
+    text: str = Field(description="the on-screen line for this slide, max ~10 words, natural case, no hashtags/emojis")
+    photo_intent: str = Field(description="what photo fits this slide (subject, place, mood) — used to pick from the library")
+    query_tags: list[str] = Field(description="3-6 lowercase single-word tags to match library photos")
+    seconds: float = Field(description="how long the slide stays: 2-4 s (longer for more words)")
+
+
+class SlideshowScript(BaseModel):
+    title: str = Field(description="short internal title")
+    slides: list[SlideSpec]
+    post_caption: str = Field(description="suggested post caption (1-2 lines, no hashtags)")

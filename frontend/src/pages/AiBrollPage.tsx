@@ -107,7 +107,7 @@ export default function AiBrollPage() {
         <p className="mt-1 text-sm text-muted-foreground">Describe a shot, pick a video model and length, generate — the clip is added to <span className="text-foreground">{personaLabel(active)}</span>'s B-roll library (approved, tagged{itemId ? ", assigned to the shot you picked" : ""}). Optionally keep the persona's real face.</p>
       </PageHeader>
       <div className="grid gap-6 px-8 py-6 xl:grid-cols-[1fr_380px]">
-        <form className="space-y-5" onSubmit={e => { e.preventDefault(); if (valid) create.mutate() }}>
+        <form noValidate className="space-y-5" onSubmit={e => { e.preventDefault(); if (valid) create.mutate() }}>
           {item && (
             <div className="flex items-start justify-between gap-3 rounded-md border border-primary/40 bg-primary/5 p-3 text-sm">
               <div><span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">from the shot list</span><div className="font-medium">{item.title} <span className="font-mono text-[11px] text-muted-foreground">{item.category} · {item.filled}/{item.count}</span></div></div>

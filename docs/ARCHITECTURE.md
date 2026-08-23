@@ -88,3 +88,7 @@ SQLAlchemy 2.0, Postgres in compose, SQLite in tests. `db.init_db()` creates tab
 ## AI B-roll
 
 `aibroll/service.py`: `AiBrollJob` → keyframe via `OpenAIImageGen.generate(identity=True, quality='high')` when a persona/clip photo is given (prompt asks for high-fidelity identity), else a plain keyframe → `VideoGen.animate(first, last=None, …)` (providers accept a single start frame; fal args drop `end_image_url`) → `_normalize_segment` → copied to `assets/<persona>/<category>/ai_<id>.mp4` and registered approved with the shot's metadata (`Asset.shotlist_item_id`). Persona reference photo: `storage/personas/<id>/reference.png` (`PUT/GET/DELETE /ai-broll/personas/{id}/image`). Jobs run on the Lab job runner.
+
+## Trends
+
+`trends/service.py`: `TrendAnalysis` row → yt-dlp download to `storage/trends/<id>/source.mp4` (+ metadata) → OpenAI transcription (`gpt-4o-mini-transcribe`, fallback `whisper-1`; empty for music-only videos) → 10 sampled frames → `LLM.analyze_trend` (vision, structured `TrendAnalysisOutput`) → `template_from_proposal()` turns the proposed sections (timestamps → weights) into a `TemplateConfig` dict; `POST /trends/{id}/template` writes it through the same validation as the Templates API. Downloader/transcriber are injectable (tests use fakes).

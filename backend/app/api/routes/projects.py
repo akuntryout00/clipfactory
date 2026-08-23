@@ -12,13 +12,31 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, run_job, storage_dir, svc
 from app.api.media import ranged_file
 from app.api.schemas import Accepted, ProjectCreate, ProjectOut, SceneAssetOverride
-from app.models import Asset, ProjectStatus, VideoProject, VideoScene
+from app.models import Asset, ProjectEvent, ProjectStatus, VideoProject, VideoScene
+from app.personas.repo import persona_or_config
+from app.projects.service import ProjectService
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
 
 # ---------- projects ----------
+def _template_kind(p: VideoProject, db: Session) -> str:
+    from app.config.loaders import load_template
+
+    try:
+        cfg_dir = getattr(getattr(db, "info", {}), "get", lambda *_: None)("configs_dir")
+        return load_template(p.template_id, cfg_dir).kind
+    except Exception:  # noqa: BLE001
+        return "video"
+
+
+def svc_for(db: Session) -> ProjectService:
+    """ProjectService bound to the session's configured dirs (used where no request is at hand)."""
+    info = getattr(db, "info", {}) or {}
+    return ProjectService(db, **{k: v for k, v in info.items() if k in ("storage_dir", "assets_dir", "configs_dir", "fonts_dir")})
+
+
 def _project_out(p: VideoProject, db: Session) -> ProjectOut:
     scenes = (
         db.execute(
@@ -46,11 +64,33 @@ def _project_out(p: VideoProject, db: Session) -> ProjectOut:
     if p.current_render_id and p.status in (ProjectStatus.READY.value, ProjectStatus.APPROVED.value):
         out.video_url = f"/projects/{p.id}/video"
     try:
+        from app.projects.slideshow import SlideshowPipeline
+
+        if (
+            p.template_override
+            and p.template_override.get("kind") == "slideshow"
+            or (not p.template_override and _template_kind(p, db) == "slideshow")
+        ):
+            out.video_url = None
+            files = SlideshowPipeline(svc_for(db)).slide_files(p) if p.render_version else []
+            out.slides = [f"/projects/{p.id}/slides/{i + 1}?v={p.render_version}" for i in range(len(files))]
+            out.slides_zip_url = f"/projects/{p.id}/slides.zip?v={p.render_version}" if files else None
+            if p.script_version:
+                sp = svc_for(db).project_dir(p.id) / f"slides_v{p.script_version}.json"
+                if sp.is_file():
+                    import json as _json
+
+                    out.post_caption = _json.loads(sp.read_text()).get("post_caption")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         from app.captions.settings import resolve_caption_style
         from app.config.loaders import load_caption_style, load_template
+        from app.schemas.configs import TemplateConfig
 
         cfg_dir = getattr(getattr(db, "info", {}), "get", lambda *_: None)("configs_dir")
-        tpl = load_template(p.template_id, cfg_dir)
+        tpl = TemplateConfig.model_validate(p.template_override) if p.template_override else load_template(p.template_id, cfg_dir)
+        out.kind = tpl.kind
         out.caption_style = resolve_caption_style(db, load_caption_style(tpl.caption_style, cfg_dir), p.caption_overrides).model_dump()
     except Exception:  # noqa: BLE001 — a missing template must not break the project view
         out.caption_style = None
@@ -61,7 +101,11 @@ def _project_out(p: VideoProject, db: Session) -> ProjectOut:
 def create_project(body: ProjectCreate, request: Request, db: Session = Depends(get_db)):
     try:
         p = svc(db, request).create_project(
-            topic=body.topic, template_id=body.template_id, persona_id=body.persona_id, target_duration=body.target_duration
+            topic=body.topic,
+            template_id=body.template_id,
+            persona_id=body.persona_id,
+            target_duration=body.target_duration,
+            template_override=body.template_override,
         )
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc))
@@ -131,6 +175,20 @@ def approve(project_id: str, request: Request, db: Session = Depends(get_db)):
         p = svc(db, request).approve(project_id)
     except RuntimeError as exc:
         raise HTTPException(409, str(exc))
+    # delivery: if the persona has a Telegram chat and a bot token is set, send right away (best effort, logged on the project)
+    try:
+        from app.config.settings import get_settings as _gs
+
+        persona = persona_or_config(db, p.persona_id)
+        transport = getattr(request.app.state, "telegram_transport", None)
+        if persona.telegram_chat_id and (persona.telegram_bot_token or _gs().telegram_bot_token or transport):
+            from app.api.routes.delivery import send_project_to_telegram
+
+            send_project_to_telegram(db, request, p, transport=transport)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("telegram delivery after approve failed for %s: %s", p.id, exc)
+        db.add(ProjectEvent(project_id=p.id, stage="DELIVERY", level="warning", message=f"Telegram delivery failed: {str(exc)[:200]}"))
+        db.commit()
     return _project_out(p, db)
 
 
@@ -241,6 +299,30 @@ def get_plan(project_id: str, request: Request, db: Session = Depends(get_db)):
     if p.plan_version == 0:
         raise HTTPException(404, "no plan yet")
     return svc(db, request).load_plan(project_id, p.plan_version).model_dump()
+
+
+@router.get("/projects/{project_id}/slides/{n}")
+def get_slide(project_id: str, n: int, request: Request, db: Session = Depends(get_db)):
+    from fastapi.responses import FileResponse
+
+    from app.projects.slideshow import SlideshowPipeline
+
+    p = _require(project_id, db)
+    files = SlideshowPipeline(svc(db, request)).slide_files(p)
+    if n < 1 or n > len(files):
+        raise HTTPException(404, "no such slide")
+    return FileResponse(files[n - 1], media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@router.get("/projects/{project_id}/slides.zip")
+def get_slides_zip(project_id: str, request: Request, db: Session = Depends(get_db)):
+    from fastapi.responses import FileResponse
+
+    p = _require(project_id, db)
+    path = svc(db, request).renders_dir(project_id) / f"slides_v{p.render_version}" / "slides.zip"
+    if not p.render_version or not path.is_file():
+        raise HTTPException(404, "no slides rendered")
+    return FileResponse(path, media_type="application/zip", filename=f"{project_id}_slides.zip")
 
 
 @router.get("/projects/{project_id}/video")

@@ -102,6 +102,17 @@ export default function SetupPage() {
             </ProviderBlock>
           </Section>
 
+          <Section title="Delivery · phones" hint="how approved videos reach the phones that run the TikTok accounts">
+            <ProviderBlock name="Telegram fallback bot (optional)" status={tests.telegram} onTest={() => runTest("telegram", ["telegram_bot_token"])}>
+              <KeyInput id="telegram_bot_token" label="Fallback bot token" value={f("telegram_bot_token")} onChange={v => set("telegram_bot_token", v)} isSet={isSet("telegram_bot_token")} placeholder={placeholder("telegram_bot_token")} hint="Each persona normally has its OWN bot (Personas → edit → Delivery). This one is only used for personas that have a chat id but no bot token." />
+            </ProviderBlock>
+            <div className="rounded-md border border-border bg-card p-4">
+              <div className="mb-2 font-heading font-semibold">Inbox link base URL</div>
+              <Field id="public_base_url" label="URL phones can reach" value={f("public_base_url")} onChange={v => set("public_base_url", v)} placeholder={placeholder("public_base_url") || "http://192.168.1.20:3000  or  http://my-mac.tailnet.ts.net:3000"} mono />
+              <p className="mt-1 text-[11px] text-muted-foreground">Used for the per-persona Inbox links and QR codes (Personas → Inbox). LAN IP works on the same Wi-Fi; for phones elsewhere install Tailscale on this machine and the phones and use the Tailscale name.</p>
+            </div>
+          </Section>
+
           <div className="flex items-center justify-between border-t border-border pt-5">
             <p className="text-xs text-muted-foreground">Keys are saved to the app database (Postgres volume) and never sent anywhere except the provider itself. To rotate a key, paste a new one; to remove it, clear the field and save.</p>
             <Button size="lg" disabled={save.isPending} onClick={() => save.mutate()}>

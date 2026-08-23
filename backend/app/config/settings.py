@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     google_veo_model: str = "veo-3.1-fast-generate-preview"  # alternative provider with true first/last-frame interpolation
     google_person_generation: str = "allow_adult"  # Veo filters people from image inputs otherwise
     fal_key: str | None = None
+    telegram_bot_token: str | None = None  # delivery: send approved videos/slides to a Telegram chat per persona
+    public_base_url: str | None = None  # URL phones can reach (LAN IP / Tailscale), used for Inbox links + QR
     lab_fal_model: str = "minimax-h3"  # default model when provider is plain "fal"
     lab_planner: str = "openai"  # openai | fake
     lab_image_provider: str = "openai"  # openai | fake

@@ -86,7 +86,7 @@ export default function LabVideoPage() {
         </>}>
         <div className="mt-2 flex flex-wrap items-center gap-3 font-mono text-[11px] text-muted-foreground">
           <span title={v.prompt} className="max-w-[60ch] truncate">{v.prompt}</span>
-          <span>{v.id}</span><span>{v.target_duration}s target · {v.n_segments} × {v.segment_seconds}s</span>
+          <span>{v.id}</span><span>{v.target_duration}s target · {v.segments.length || v.n_segments} shots{v.segments.length ? ` (${v.segments.map(s => `${s.seconds ?? v.segment_seconds}s`).join(" + ")})` : ""}</span>
           <span className="rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-primary">{v.provider_label ?? v.video_provider} · {v.video_model}</span>
           <span>images {v.image_model}</span><span>{fmtDate(v.created_at)}</span>
         </div>
@@ -147,7 +147,7 @@ export default function LabVideoPage() {
                           : k.status === "PLANNING" ? <span className="animate-pulse">waiting for storyboard…</span>
                           : "waiting"}
                       </div>}
-                    <span className="absolute left-1 top-1 rounded bg-background/80 px-1 font-mono text-[10px]">{k.index === 0 ? "START" : k.index === v.n_segments ? "END" : `#${k.index}`}</span>
+                    <span className="absolute left-1 top-1 rounded bg-background/80 px-1 font-mono text-[10px]">{k.index === 0 ? "START" : k.index === v.keyframes.length - 1 ? "END" : `#${k.index}`}</span>
                     {k.version > 1 && <span className="absolute right-1 top-1 rounded bg-background/80 px-1 font-mono text-[10px]">v{k.version}</span>}
                   </div>
                   <div className="mt-1 truncate text-xs" title={k.prompt}>{k.caption || k.prompt || "—"}</div>
@@ -162,7 +162,7 @@ export default function LabVideoPage() {
 
           {v.segments.some(s => s.status !== "PENDING") && (
             <section className="min-w-0">
-              <h2 className="mb-2 font-heading text-sm font-semibold">Segments · {v.segments.length} × {v.segment_seconds}s</h2>
+              <h2 className="mb-2 font-heading text-sm font-semibold">Shots · {v.segments.length} <span className="font-mono text-[11px] font-normal text-muted-foreground">content-driven: each shot has its own length; "cont." continues from the previous shot's last frame</span></h2>
               <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {v.segments.map(s => (
                   <div key={s.index} className={cn("min-w-0 overflow-hidden rounded-md border bg-card p-2.5", s.status === "FAILED" ? "border-fail/40" : s.status === "GENERATING" ? "border-primary/50" : "border-border")}>
@@ -172,7 +172,7 @@ export default function LabVideoPage() {
                     </div>
                     <p className="mt-1.5 line-clamp-2 break-words text-[11px] leading-snug text-muted-foreground" title={s.prompt ?? ""}>{s.prompt ?? "—"}</p>
                     <div className="mt-1.5 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
-                      <span>{s.duration ? `${s.duration.toFixed(1)}s` : `${v.segment_seconds}s`}{s.version > 1 ? ` · v${s.version}` : ""}</span>
+                      <span>{s.duration ? `${s.duration.toFixed(1)}s` : `${s.seconds ?? v.segment_seconds}s`}{s.transition === "continuous" ? " · cont." : ""}{s.version > 1 ? ` · v${s.version}` : ""}</span>
                       {s.video_url && <a className="text-primary underline" href={`/api${s.video_url}`} target="_blank" rel="noreferrer">open clip</a>}
                     </div>
                     {s.last_edit && <p className="mt-1 line-clamp-1 text-[10px] text-primary" title={s.last_edit}>edit: {s.last_edit}</p>}

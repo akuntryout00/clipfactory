@@ -25,12 +25,12 @@ export const EMPTY_TEMPLATE: Template = {
 
 const MUSIC = ["", "upbeat", "productivity_soft", "minimal", "chill"]
 
-export function TemplateEditor({ template, onClose }: { template: Template | null | "new"; onClose: () => void }) {
+export function TemplateEditor({ template, onClose, initial, onSaved }: { template: Template | null | "new"; onClose: () => void; initial?: Template | null; onSaved?: (t: Template) => void }) {
   const qc = useQueryClient()
   const confirm = useConfirm()
   const isNew = template === "new"
   const [t, setT] = useState<Template>(EMPTY_TEMPLATE)
-  useEffect(() => { setT(template && template !== "new" ? structuredClone(template) : EMPTY_TEMPLATE) }, [template])
+  useEffect(() => { setT(template && template !== "new" ? structuredClone(template) : initial ? structuredClone(initial) : EMPTY_TEMPLATE) }, [template, initial])
   const { data: styles } = useQuery({ queryKey: ["caption-styles"], queryFn: api.captionStyles })
 
   const total = t.sections.reduce((a, s) => a + (Number(s.weight) || 0), 0)
@@ -43,7 +43,7 @@ export function TemplateEditor({ template, onClose }: { template: Template | nul
   const invalidate = () => { qc.invalidateQueries({ queryKey: ["templates"] }) }
   const save = useMutation({
     mutationFn: () => (isNew ? api.createTemplate(t) : api.updateTemplate(t)),
-    onSuccess: () => { toast.success(isNew ? `Template ${t.id} created` : `Template ${t.id} saved`); invalidate(); onClose() },
+    onSuccess: saved => { toast.success(isNew ? `Template ${t.id} created` : `Template ${t.id} saved`); invalidate(); onSaved?.(saved); onClose() },
     onError: e => toast.error(e.message),
   })
   const del = useMutation({
@@ -74,7 +74,7 @@ export function TemplateEditor({ template, onClose }: { template: Template | nul
           <DialogTitle className="font-heading">{isNew ? "New template" : `Edit template · ${t.id}`}</DialogTitle>
           <DialogDescription>Templates are saved as JSON in <code className="font-mono">configs/templates/</code>. The LLM writes one text per section, in order, sized by weight.</DialogDescription>
         </DialogHeader>
-        <form className="grid gap-4 text-sm" onSubmit={e => { e.preventDefault(); if (valid) save.mutate() }}>
+        <form noValidate className="grid gap-4 text-sm" onSubmit={e => { e.preventDefault(); if (valid) save.mutate() }}>
           <div className="grid grid-cols-3 gap-3">
             <div><Label className="text-xs text-muted-foreground">id (folder-safe, cannot change later)</Label>
               <Input value={t.id} disabled={!isNew} onChange={e => setT(x => ({ ...x, id: e.target.value.toLowerCase() }))} placeholder="story_fast_v1" className={cn(!idOk && t.id && "border-fail")} /></div>

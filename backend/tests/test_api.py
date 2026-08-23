@@ -39,7 +39,7 @@ def client(mini_assets, tmp_path):
 def test_health_and_templates(client):
     assert client.get("/health").json()["status"] == "ok"
     ids = {t["id"] for t in client.get("/templates").json()}
-    assert ids == {"story_v1", "list_v1", "pov_v1", "problem_solution_v1"}
+    assert ids >= {"story_v1", "list_v1", "pov_v1", "problem_solution_v1"}  # user-made templates may exist too
     assert {p["id"] for p in client.get("/personas").json()} >= {"indie_maker", "young_professional"}
 
 

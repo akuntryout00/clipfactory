@@ -273,3 +273,48 @@ def shotlist_match_user_prompt(items: list[dict], assets: list[dict]) -> str:
         for a in assets
     )
     return f"SHOT LIST:\n{il}\n\nCLIPS:\n{al}\n\nReturn one assignment per clip."
+
+
+TREND_SYSTEM = (
+    "You are a short-form video strategist reverse-engineering a TikTok/Reels video for a creator who makes vertical videos from "
+    "their own B-roll with AI voice-over and dynamic captions. You get the video's metadata, its transcript (if any) and frames "
+    "sampled in order. Analyse the retention mechanics precisely (hook, structure with timestamps, pacing, visuals, captions, "
+    "audio), explain why it works, then translate it for the given persona: concrete tips and remix hook ideas they can shoot with "
+    "everyday B-roll. Finally propose a reusable TEMPLATE (sections with guidance, durations, shot lengths, overlays, closing rule) "
+    "that would let the factory produce videos with the same structure. Be specific, never generic. Output JSON only."
+)
+
+
+def trend_user_prompt(persona: PersonaConfig, meta: dict, transcript: str | None, n_frames: int, template_ids: list[str]) -> str:
+    m = {
+        k: meta.get(k)
+        for k in ("platform", "title", "uploader", "duration", "view_count", "like_count", "description")
+        if meta.get(k) is not None
+    }
+    return (
+        f"{persona_block(persona)}\n\nVIDEO METADATA: {json.dumps(m, ensure_ascii=False)}\n"
+        f"TRANSCRIPT: {transcript.strip() if transcript else '(no speech / unavailable)'}\n"
+        f"FRAMES: {n_frames} frames sampled evenly, in order.\n"
+        f"EXISTING TEMPLATE IDS (the proposal id must not collide): {', '.join(template_ids) or '(none)'}\n"
+        "Section timestamps must be within the video duration and in order; template durations in seconds (min <= target <= max, 15-25 typical for this factory)."
+    )
+
+
+SLIDES_SYSTEM = (
+    "You write TikTok/Reels photo-mode slideshows: a sequence of photos with ONE bold line of text on each, no voice-over (music is "
+    "added when posting). Follow the persona. Conventions that make these viral: slide 1 is a scroll-stopping hook (bold claim, "
+    "'things nobody tells you about…', 'POV:', 'signs you…', a numbered promise, or a confession); each following slide is ONE "
+    "specific, relatable idea in max ~10 words — no filler, no explanations; the last slide is the twist, punchline or takeaway "
+    "that makes people rewatch/share; no call to action, no hashtags, no emojis, natural sentence case. Text must be readable in "
+    "2-4 seconds. For each slide describe the photo that fits (everyday, candid, from the persona's life) and give lowercase tags "
+    "to find it in a photo library. Output JSON only."
+)
+
+
+def slides_user_prompt(persona: PersonaConfig, template: TemplateConfig, topic: str, n_slides: int, photo_tags: list[str]) -> str:
+    return (
+        f"{persona_block(persona)}\n{template_block(template)}\n"
+        f"TOPIC: {topic}\nSLIDES: exactly {n_slides} (index 0..{n_slides - 1}); slide 0 is the hook, the last one the closing.\n"
+        f"PHOTO LIBRARY TAGS (prefer photos that exist): {', '.join(photo_tags) or '(unknown)'}\n"
+        f"CLOSING: {template.closing or 'end on a punchline, no CTA'}\nWrite the slideshow now."
+    )

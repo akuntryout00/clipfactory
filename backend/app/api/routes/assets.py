@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import assets_dir, cfg_dir, get_db, storage_dir
 from app.api.media import ranged_file, thumbnail_for
 from app.api.schemas import AssetOut, AssetPatch
-from app.assets.importer import VIDEO_EXT, import_assets, register_asset_file
+from app.assets.importer import IMAGE_EXT, MEDIA_EXT, import_assets, register_asset_file
 from app.assets.selector import extract_query_tags, find_candidates
 from app.config.settings import get_settings
 from app.llm.base import get_llm
@@ -24,13 +24,30 @@ router = APIRouter()
 
 
 # ---------- assets ----------
+def _image_jpeg(path: Path, width: int) -> bytes:
+    """Resized JPEG bytes of a photo (EXIF-rotated)."""
+    from io import BytesIO
+
+    from PIL import Image, ImageOps
+
+    with Image.open(path) as im:
+        im = ImageOps.exif_transpose(im).convert("RGB")
+        im.thumbnail((width, width * 2))
+        buf = BytesIO()
+        im.save(buf, format="JPEG", quality=85)
+    return buf.getvalue()
+
+
 @router.get("/assets", response_model=list[AssetOut])
-def assets(db: Session = Depends(get_db), approved: bool | None = None, persona: str | None = None):
+def assets(db: Session = Depends(get_db), approved: bool | None = None, persona: str | None = None, kind: str | None = None):
+    """kind: video | image (omit for both)."""
     q = select(Asset).order_by(Asset.id)
     if approved is not None:
         q = q.where(Asset.approved.is_(approved))
     if persona:
         q = q.where(Asset.persona_id == persona)
+    if kind:
+        q = q.where(Asset.kind == kind)
     return list(db.execute(q).scalars())
 
 
@@ -67,15 +84,21 @@ async def asset_analyze(request: Request, file: UploadFile = File(...), db: Sess
     from app.assets.metadata import probe_video
 
     suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in VIDEO_EXT:
+    if suffix not in MEDIA_EXT:
         raise HTTPException(400, f"unsupported file type {suffix or '(none)'}")
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td) / f"clip{suffix}"
         with tmp.open("wb") as out:
             shutil.copyfileobj(file.file, out)
         try:
-            meta = probe_video(tmp)
-            frames = extract_frames(tmp, n=6, width=512)
+            if suffix in IMAGE_EXT:
+                from app.assets.metadata import probe_image
+
+                meta = probe_image(tmp)
+                frames = [_image_jpeg(tmp, 768)]
+            else:
+                meta = probe_video(tmp)
+                frames = extract_frames(tmp, n=6, width=512)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(400, f"could not read video: {exc}")
         if not frames:
@@ -138,8 +161,8 @@ async def asset_upload(
     except (FileNotFoundError, KeyError):
         raise HTTPException(404, f"persona not found: {pid or '(none)'} — pick a persona for this clip")
     suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in VIDEO_EXT:
-        raise HTTPException(400, f"unsupported file type {suffix or '(none)'}; allowed: {', '.join(sorted(VIDEO_EXT))}")
+    if suffix not in MEDIA_EXT:
+        raise HTTPException(400, f"unsupported file type {suffix or '(none)'}; allowed: {', '.join(sorted(MEDIA_EXT))}")
     stem = re.sub(r"[^a-z0-9]+", "_", Path(file.filename or "clip").stem.lower()).strip("_") or "clip"
     folder = assets_dir(request) / pid / cat
     folder.mkdir(parents=True, exist_ok=True)
@@ -236,6 +259,13 @@ def asset_thumbnail(asset_id: str, request: Request, db: Session = Depends(get_d
     src = assets_dir(request) / a.file
     if not src.is_file():
         raise HTTPException(404, "asset file missing")
+    if a.kind == "image":
+        cache = storage_dir(request) / "thumbs" / "assets"
+        cache.mkdir(parents=True, exist_ok=True)
+        out = cache / f"{a.id}.jpg"
+        if not out.is_file() or out.stat().st_mtime < src.stat().st_mtime:
+            out.write_bytes(_image_jpeg(src, 360))
+        return FileResponse(out, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
     at = min(max(a.usable_start or 0.5, 0.3), max((a.duration or 1) - 0.2, 0.3))
     path = thumbnail_for(src, storage_dir(request) / "thumbs" / "assets", a.id, at=at)
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})

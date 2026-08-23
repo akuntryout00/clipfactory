@@ -59,6 +59,8 @@ class SegmentOut(BaseModel):
     status: str
     error: str | None
     duration: float | None
+    seconds: int | None = None
+    transition: str | None = None
     video_url: str | None
     editable: bool = False
     last_edit: str | None = None
@@ -136,6 +138,8 @@ def _out(v: LabVideo, svc: LabService) -> LabVideoOut:
             status=s.status,
             error=s.error,
             duration=s.duration,
+            seconds=s.seconds,
+            transition=s.transition,
             video_url=f"/lab/videos/{v.id}/segments/{s.index}/video?v={s.version or 0}" if s.video_path else None,
             editable=bool(s.provider_ref),
             last_edit=s.last_edit,

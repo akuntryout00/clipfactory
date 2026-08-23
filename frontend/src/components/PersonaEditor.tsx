@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { Plus, Trash2 } from "lucide-react"
+import { Plus, Send, Trash2 } from "lucide-react"
 import { toast } from "sonner"
-import { api } from "@/lib/api"
+import { api, delivery } from "@/lib/api"
 import type { ClosingStyle, Persona, ProductPolicy } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { cn } from "@/lib/utils"
 import { useConfirm } from "@/components/ConfirmDialog"
 
 export const EMPTY_PERSONA: Persona = {
@@ -17,7 +18,7 @@ export const EMPTY_PERSONA: Persona = {
   tools: [], products: [], product_mention_policy: "never", closing_style: "punchline_no_cta",
   target_duration: 18, max_duration: 25, speech_rate_wps: 2.5,
   voice: { provider: "elevenlabs", voice_id: "", model_id: "eleven_multilingual_v2", speed: 1.0, stability: 0.5, similarity_boost: 0.75, style: 0 },
-  default_music_category: null,
+  default_music_category: null, telegram_chat_id: null,
 }
 
 const POLICIES: { v: ProductPolicy; l: string }[] = [
@@ -59,6 +60,7 @@ export function PersonaForm({ initial, mode, onDone, onCancel, submitLabel }: {
   const confirm = useConfirm()
   const isNew = mode === "create"
   const [p, setP] = useState<Persona>(initial)
+  const [tgTest, setTgTest] = useState<{ ok: boolean; message: string } | "running" | null>(null)
   // list fields are edited as free text (one per line) and parsed on save
   const [lists, setLists] = useState({ topics: "", tone: "", avoid: "", tools: "" })
   useEffect(() => {
@@ -70,6 +72,7 @@ export function PersonaForm({ initial, mode, onDone, onCancel, submitLabel }: {
 
   const built = (): Persona => ({
     ...p,
+    telegram_bot_token: p.telegram_bot_token === "" ? "" : p.telegram_bot_token || null,
     id: p.id.trim(),
     name: (p.name.trim() || p.identity?.name?.trim() || p.id).slice(0, 128),
     topics: splitLines(lists.topics), tone: splitLines(lists.tone), avoid: splitLines(lists.avoid), tools: splitLines(lists.tools),
@@ -97,7 +100,7 @@ export function PersonaForm({ initial, mode, onDone, onCancel, submitLabel }: {
   const setProduct = (i: number, patch: Partial<Persona["products"][number]>) => setP(x => ({ ...x, products: x.products.map((pr, j) => (j === i ? { ...pr, ...patch } : pr)) }))
 
   return (
-        <form className="space-y-6" onSubmit={e => { e.preventDefault(); if (valid) save.mutate() }}>
+        <form noValidate className="space-y-6" onSubmit={e => { e.preventDefault(); if (valid) save.mutate() }}>
           <Section title="Identity">
             <div className="grid gap-3 sm:grid-cols-[1fr_90px_1fr_120px]">
               <Field label="Name" hint={`id ${p.id} · set automatically`}><Input value={p.identity?.name ?? ""} onChange={e => setId({ name: e.target.value })} placeholder="Michael" /></Field>
@@ -168,6 +171,26 @@ export function PersonaForm({ initial, mode, onDone, onCancel, submitLabel }: {
               <Field label="Music category" hint="optional default"><Input value={p.default_music_category ?? ""} onChange={e => setP(x => ({ ...x, default_music_category: e.target.value || null }))} className="font-mono" placeholder="upbeat" /></Field>
             </div>
             {!durOk && <p className="text-xs text-fail">Target length must be ≤ max length.</p>}
+          </Section>
+
+          <Section title="Delivery · Telegram (this persona's own bot)">
+            <div className="grid gap-3 sm:grid-cols-[1fr_240px]">
+              <Field label="Bot token" hint={p.telegram_bot_token_set ? `set (${p.telegram_bot_token_hint}) — paste a new one to replace, or clear below` : "from @BotFather → /newbot; one bot per persona/phone"}>
+                <Input type="password" autoComplete="off" value={p.telegram_bot_token ?? ""} onChange={e => setP(x => ({ ...x, telegram_bot_token: e.target.value || null }))} className="font-mono" placeholder={p.telegram_bot_token_set ? "•••••• (unchanged)" : "123456789:AAH…"} />
+              </Field>
+              <Field label="Chat id" hint="group/channel (or your DM) with that bot">
+                <Input value={p.telegram_chat_id ?? ""} onChange={e => setP(x => ({ ...x, telegram_chat_id: e.target.value || null }))} className="font-mono" placeholder="-1001234567890" />
+              </Field>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" size="sm" variant="outline" disabled={tgTest === "running" || (!p.telegram_bot_token && !p.telegram_bot_token_set)}
+                onClick={async () => { setTgTest("running"); try { const r = await delivery.testPersonaTelegram(p.id, { token: p.telegram_bot_token || null, chat_id: p.telegram_chat_id || null }); setTgTest(r) } catch (e) { setTgTest({ ok: false, message: (e as Error).message }) } }}>
+                <Send className="size-3.5" /> {tgTest === "running" ? "Testing…" : "Test bot (sends a hello message)"}
+              </Button>
+              {tgTest && tgTest !== "running" && <span className={cn("text-xs", tgTest.ok ? "text-ready" : "text-fail")}>{tgTest.message}</span>}
+              {p.telegram_bot_token_set && <Button type="button" size="sm" variant="ghost" className="text-fail hover:text-fail" onClick={() => setP(x => ({ ...x, telegram_bot_token: "", telegram_bot_token_set: false, telegram_bot_token_hint: null }))}>Remove token</Button>}
+              <span className="text-[11px] text-muted-foreground">On Approve the video (or slides + zip) goes to this chat. Add the bot to the group/channel first; get the chat id from @userinfobot / @getidsbot.</span>
+            </div>
           </Section>
 
           <div className="flex items-center justify-between gap-2 border-t border-border pt-4">

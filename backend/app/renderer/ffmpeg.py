@@ -45,19 +45,22 @@ def _run(cmd: list[str], commands: list[list[str]]) -> None:
         raise RenderError("ffmpeg failed:\n" + " ".join(cmd) + "\n" + "\n".join(tail))
 
 
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+
+
 def render_scene_clip(ffmpeg: str, src: Path, start: float, duration: float, out: Path, look, options: RenderOptions, commands) -> None:
     vf = scene_vf(look, duration)
+    if src.suffix.lower() in IMAGE_SUFFIXES:
+        # still photo → looped frames for `duration`; the same cover/crop/zoom chain gives a Ken Burns move
+        src_args = ["-loop", "1", "-framerate", str(OUT_FPS), "-t", f"{duration:.3f}", "-i", str(src)]
+    else:
+        src_args = ["-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(src)]
     cmd = [
         ffmpeg,
         "-y",
         "-loglevel",
         "error",
-        "-ss",
-        f"{start:.3f}",
-        "-t",
-        f"{duration:.3f}",
-        "-i",
-        str(src),
+        *src_args,
         "-an",
         "-vf",
         vf,

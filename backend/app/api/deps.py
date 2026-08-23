@@ -19,6 +19,10 @@ log = logging.getLogger(__name__)
 
 def get_db(request: Request) -> Iterator[Session]:
     s: Session = request.app.state.session_factory()
+    # let helpers that only get the session (e.g. _project_out) find the configured dirs
+    s.info.update(
+        {k: v for k, v in request.app.state.service_kwargs.items() if k in ("storage_dir", "assets_dir", "configs_dir", "fonts_dir")}
+    )
     try:
         yield s
     finally:

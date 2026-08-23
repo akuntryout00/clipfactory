@@ -28,8 +28,15 @@ export interface Project {
   script: string | null; script_version: number; voice_version: number; plan_version: number; render_version: number
   current_render_id: string | null; created_at: string; updated_at: string; approved_at: string | null
   scenes: Scene[]; renders: RenderInfo[]; events: EventInfo[]; video_url: string | null
-  caption_overrides: CaptionOverrides | null; caption_style: CaptionStyle | null; batch_id?: string | null
+  caption_overrides: CaptionOverrides | null; caption_style: CaptionStyle | null; batch_id?: string | null; template_override?: Template | null; kind?: "video" | "slideshow"
+  slides?: string[]; slides_zip_url?: string | null; post_caption?: string | null
 }
+export const SLIDESHOW_STAGES: { key: ProjectStatus; label: string }[] = [
+  { key: "GENERATING_SCRIPT", label: "Slides" },
+  { key: "SELECTING_ASSETS", label: "Photos" },
+  { key: "RENDERING", label: "Images" },
+  { key: "READY", label: "Ready" },
+]
 export type BatchStatus = "PENDING" | "RUNNING" | "DONE" | "CANCELLED" | "FAILED"
 export interface Batch {
   id: string; persona_id: string; name: string; status: BatchStatus; total: number; done: number; failed: number; running: number
@@ -53,7 +60,7 @@ export interface Asset {
   id: string; file: string; description: string | null; tags: string[]; action: string | null; location: string | null
   shot: string | null; mood: string | null; duration: number; width: number | null; height: number | null; fps: number | null
   orientation: string | null; usable_start: number; usable_end: number; quality_score: number; usage_count: number
-  last_used_at: string | null; approved: boolean; persona_id: string | null; shotlist_item_id?: string | null
+  last_used_at: string | null; approved: boolean; persona_id: string | null; shotlist_item_id?: string | null; kind?: "video" | "image"
 }
 export interface ShotlistItem {
   id: string; order: number; category: string; title: string; description: string; shot: string | null; action: string | null
@@ -70,7 +77,7 @@ export interface Candidate {
   shot: string | null; mood: string | null; duration: number; score: number; recently_used: boolean
 }
 export interface Template {
-  id: string; name: string; description: string; duration: { min: number; target: number; max: number }
+  id: string; name: string; description: string; kind?: "video" | "slideshow"; duration: { min: number; target: number; max: number }
   sections: { type: string; weight: number; guidance: string }[]; voiceover: boolean; caption_style: string
   music_category: string | null; closing: string | null; shot_duration: { min: number; max: number }; overlays: { min: number; max: number }
 }
@@ -83,8 +90,11 @@ export interface Persona {
   identity?: PersonaIdentity | null
   tools: string[]; products: { name: string; one_liner: string }[]; product_mention_policy: ProductPolicy; closing_style: ClosingStyle
   target_duration: number; max_duration: number; speech_rate_wps: number
-  voice: PersonaVoice; default_music_category?: string | null
+  voice: PersonaVoice; default_music_category?: string | null; telegram_chat_id?: string | null
+  telegram_bot_token?: string | null; telegram_bot_token_set?: boolean; telegram_bot_token_hint?: string | null
 }
+export interface InboxItem { id: string; topic: string; kind: "video" | "slideshow"; status: string; approved_at: string | null; created_at: string; duration: number | null; video_url: string | null; slides: string[]; zip_url: string | null; post_caption: string | null }
+export interface InboxLink { persona_id: string; token: string; url: string; base_url: string; qr_url?: string }
 export interface CaptionChunk { start: number; end: number; text: string; emphasis_index: number | null }
 export interface PlanScene { order: number; start: number; end: number; asset_id: string; asset_file: string; asset_start: number; text: string | null; section: string | null }
 export interface Plan {
@@ -122,7 +132,7 @@ export interface ClipAnalysis {
 
 // ---- AI Lab (isolated module) ----
 export interface LabKeyframe { index: number; prompt: string; caption: string | null; status: string; error: string | null; version: number; image_url: string | null }
-export interface LabSegment { index: number; from_index: number; to_index: number; prompt: string | null; status: string; error: string | null; duration: number | null; video_url: string | null; editable: boolean; last_edit: string | null; version: number }
+export interface LabSegment { index: number; from_index: number; to_index: number; prompt: string | null; status: string; error: string | null; duration: number | null; seconds?: number | null; transition?: string | null; video_url: string | null; editable: boolean; last_edit: string | null; version: number }
 export interface LabProvider { id: string; label: string; vendor: string; model: string; max_seconds: number; min_seconds: number; supports_edit: boolean; first_last: boolean; audio: boolean; price_hint: string | null; price_per_second: number; note: string | null; available: boolean; needs: string | null }
 export interface LabEstimate { provider: string; label: string; target_duration: number; n_segments: number; segment_seconds: number; video_seconds: number; keyframes: number; price_per_second: number; video_cost: number; image_cost: number; per_image: number; image_quality: string; planner_cost: number; total: number; note: string }
 export interface LabEvent { stage: string; level: "info" | "success" | "warning" | "error" | string; message: string; created_at: string }
@@ -141,3 +151,19 @@ export interface AiBrollJob {
   asset_id: string | null; keyframe_url: string | null; video_url: string | null; created_at: string; updated_at: string
 }
 export interface AiBrollEstimate { provider: string; label: string; seconds: number; video_cost: number; image_cost: number; total: number; note: string }
+
+export type TrendStatus = "QUEUED" | "DOWNLOADING" | "TRANSCRIBING" | "ANALYZING" | "DONE" | "FAILED"
+export interface TrendSection { label: string; start: number; end: number; purpose: string }
+export interface TrendAnalysisData {
+  summary: string; hook: { text: string; type: string; seconds: number }; structure: TrendSection[]
+  pacing: string; visual_style: string; caption_style: string; audio: string
+  why_it_works: string[]; tips_for_persona: string[]; remix_ideas: string[]
+  template_proposal: { id: string; name: string; description: string; duration_min: number; duration_target: number; duration_max: number; sections: TrendSection[]; voiceover: boolean; closing: string; shot_min: number; shot_max: number; overlays_min: number; overlays_max: number }
+}
+export interface Trend {
+  id: string; url: string; platform: string; persona_id: string | null; status: TrendStatus; stage_message: string | null; error: string | null
+  title: string | null; uploader: string | null; duration: number | null
+  meta: { view_count?: number; like_count?: number; comment_count?: number; upload_date?: string; webpage_url?: string }
+  thumbnail_url: string | null; video_url: string | null; template_id: string | null; has_transcript: boolean; created_at: string; updated_at: string
+  transcript?: string | null; analysis?: TrendAnalysisData | null; template_draft?: Template | null
+}

@@ -22,6 +22,8 @@ dependencies = [
     "google-genai>=1.0,<3",
     "fal-client>=0.5,<2",
     "pillow>=10,<13",
+    "yt-dlp>=2025.1",
+    "qrcode[pil]>=7.4,<9",
 ]
 
 [project.optional-dependencies]
